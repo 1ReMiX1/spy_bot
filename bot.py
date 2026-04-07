@@ -1178,10 +1178,9 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             lobby.add_night_action(mid, target_id)
 
         await query.edit_message_text(f"🔪 Мафия выбрала: {target_name}")
+        await asyncio.sleep(2)  # Даем время на прочтение
 
         if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
-            await asyncio.sleep(2)
-            
             keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
                         for pid, p in lobby.get_alive_players().items()]
             
@@ -1189,10 +1188,10 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             doctor_name = lobby.players[lobby.doctor_id].username
             text = f"👨‍⚕️ ДОКТОР ({doctor_name})\nВыберите, кого лечить:"
             await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            return
 
         elif lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
-            await asyncio.sleep(2)
-            
+            await asyncio.sleep(1)
             keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
                         for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
             
@@ -1200,19 +1199,20 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             komissar_name = lobby.players[lobby.komissar_id].username
             text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
             await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            return
         else:
             await asyncio.sleep(2)
             await end_night_phase_single_device(context, code, query.message.chat_id)
+            return
 
     elif action == "heal":
         if lobby.doctor_id:
             lobby.add_night_action(lobby.doctor_id, target_id)
 
         await query.edit_message_text(f"💊 Доктор лечит: {target_name}")
+        await asyncio.sleep(2)
 
         if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
-            await asyncio.sleep(2)
-            
             keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
                         for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
             
@@ -1220,9 +1220,11 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             komissar_name = lobby.players[lobby.komissar_id].username
             text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
             await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            return
         else:
             await asyncio.sleep(2)
             await end_night_phase_single_device(context, code, query.message.chat_id)
+            return
 
     elif action == "check":
         if lobby.komissar_id:
@@ -1236,9 +1238,6 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(f"🔍 Комиссар проверил {target_name}:\n{result}")
         await asyncio.sleep(2)
         await end_night_phase_single_device(context, code, query.message.chat_id)
-
-async def end_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
-    if code not in MAFIA_LOBBIES:
         return
 
     lobby = MAFIA_LOBBIES[code]
