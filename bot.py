@@ -1226,7 +1226,7 @@ async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
     lobby.last_message_id = sent_message.message_id
 
-# ============= НОЧНЫЕ ДЕЙСТВИЯ (ОДНО УСТРОЙСТВО) - ИСПРАВЛЕНО! =============
+# ============= НОЧНЫЕ ДЕЙСТВИЯ (ОДНО УСТРОЙСТВО) - ПОЛНОСТЬЮ ИСПРАВЛЕНО! =============
 
 async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1236,7 +1236,10 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
 
     parts = query.data.split("_")
-    action = parts[2]  # kill, heal, check
+    # ИСПРАВЛЕНО: правильный разбор callback_data
+    # Формат: mafia_ACTION_single_CODE_TARGETID
+    action = parts[1]  # kill, heal, check
+    # parts[2] это "single" - пропускаем
     code = parts[3]
     target_id = int(parts[4])
 
@@ -1255,6 +1258,12 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(f"🔪 Мафия выбрала: {target_name}")
         await asyncio.sleep(2)
 
+        # Удаляем предыдущее сообщение
+        try:
+            await query.message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
+
         # Переход к доктору если жив
         if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
             keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
@@ -1263,7 +1272,8 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             reply_markup = InlineKeyboardMarkup(keyboard)
             doctor_name = lobby.players[lobby.doctor_id].username
             text = f"👨‍⚕️ ДОКТОР ({doctor_name})\nВыберите, кого лечить:"
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            lobby.last_message_id = sent_message.message_id
             return
 
         # Если доктора нет, переход к комиссару
@@ -1275,11 +1285,12 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             reply_markup = InlineKeyboardMarkup(keyboard)
             komissar_name = lobby.players[lobby.komissar_id].username
             text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            lobby.last_message_id = sent_message.message_id
             return
         else:
             # Нет ни доктора, ни комиссара - завершаем ночь
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
             await end_night_phase_single_device(context, code, query.message.chat_id)
             return
 
@@ -1291,6 +1302,12 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(f"💊 Доктор лечит: {target_name}")
         await asyncio.sleep(2)
 
+        # Удаляем предыдущее сообщение
+        try:
+            await query.message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
+
         # Переход к комиссару если жив
         if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
             keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
@@ -1299,11 +1316,12 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             reply_markup = InlineKeyboardMarkup(keyboard)
             komissar_name = lobby.players[lobby.komissar_id].username
             text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            lobby.last_message_id = sent_message.message_id
             return
         else:
             # Комиссара нет - завершаем ночь
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
             await end_night_phase_single_device(context, code, query.message.chat_id)
             return
 
@@ -1318,7 +1336,13 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             result = "🟢 Мирный житель"
 
         await query.edit_message_text(f"🔍 Комиссар проверил {target_name}:\n{result}")
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
+        
+        # Удаляем предыдущее сообщение
+        try:
+            await query.message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
         
         # Все роли отработали - завершаем ночь
         await end_night_phase_single_device(context, code, query.message.chat_id)
@@ -1341,7 +1365,8 @@ async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, co
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         text = f"🌙 НОЧЬ {lobby.day_number}\n\n🔪 МАФИЯ ({mafia_names})\nВыберите жертву:"
-        await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        sent_message = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        lobby.last_message_id = sent_message.message_id
         return
 
     # Мафии нет - сразу переходим к утру
@@ -1359,13 +1384,17 @@ async def end_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code
 
     if lobby.last_killed:
         killed_name = lobby.players[lobby.last_killed].username
-        night_report += f"💀 Ночью погиб: {killed_name}\n"
+        killed_role = lobby.players[lobby.last_killed].role
+        role_emoji = {"мафия": "🔪", "комиссар": "👮", "доктор": "👨‍⚕️", "мирный": "👤"}
+        emoji = role_emoji.get(killed_role, "👤")
+        night_report += f"💀 Ночью погиб: {killed_name} {emoji} ({killed_role})\n"
     elif lobby.last_saved:
         night_report += "💊 Доктор спас жителя!\n"
     else:
         night_report += "✅ Ночь прошла спокойно\n"
 
-    await context.bot.send_message(chat_id=chat_id, text=night_report)
+    sent_message = await context.bot.send_message(chat_id=chat_id, text=night_report)
+    lobby.last_message_id = sent_message.message_id
 
     win_condition = lobby.check_win_condition()
     if win_condition:
@@ -1392,7 +1421,8 @@ async def start_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, cod
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     text = "☀️ ДНЕВНОЕ ГОЛОСОВАНИЕ!\n\nОбсудите и проголосуйте, кого выгнать из города:"
-    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+    sent_message = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+    lobby.last_message_id = sent_message.message_id
 
 async def mafia_day_vote_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Голосование днем (одно устройство)"""
@@ -1410,7 +1440,12 @@ async def mafia_day_vote_single(update: Update, context: ContextTypes.DEFAULT_TY
     lobby = MAFIA_LOBBIES[code]
 
     if target == "skip":
-        await query.answer("⏭️ День пропущен", show_alert=True)
+        await query.edit_message_text("⏭️ День пропущен")
+        await asyncio.sleep(2)
+        try:
+            await query.message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
         await end_day_voting_single_device(context, code, query.message.chat_id, skip=True)
     else:
         target_id = int(target)
@@ -1438,6 +1473,11 @@ async def mafia_confirm_vote_single(update: Update, context: ContextTypes.DEFAUL
     if code not in MAFIA_LOBBIES:
         await query.edit_message_text("❌ Игра не найдена.")
         return
+
+    try:
+        await query.message.delete()
+    except Exception as e:
+        logger.warning(f"Не удалось удалить сообщение: {e}")
 
     await end_day_voting_single_device(context, code, query.message.chat_id, expelled_id=target_id)
 
@@ -1481,7 +1521,8 @@ async def end_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code:
         day_result += f"💀 Изгнан: {expelled_name}\n"
         day_result += f"{emoji} Роль: {expelled_role.upper()}\n"
 
-    await context.bot.send_message(chat_id=chat_id, text=day_result)
+    sent_message = await context.bot.send_message(chat_id=chat_id, text=day_result)
+    lobby.last_message_id = sent_message.message_id
 
     win_condition = lobby.check_win_condition()
     if win_condition:
@@ -1492,7 +1533,14 @@ async def end_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code:
     lobby.phase = "night"
 
     await asyncio.sleep(3)
-    await context.bot.send_message(chat_id=chat_id, text=f"🌙 Наступает ночь {lobby.day_number}...")
+    
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=lobby.last_message_id)
+    except Exception as e:
+        logger.warning(f"Не удалось удалить сообщение: {e}")
+    
+    sent_message = await context.bot.send_message(chat_id=chat_id, text=f"🌙 Наступает ночь {lobby.day_number}...")
+    lobby.last_message_id = sent_message.message_id
     await asyncio.sleep(2)
     await start_night_phase_single_device(context, code, chat_id)
 
@@ -1654,7 +1702,10 @@ async def end_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
 
     if lobby.last_killed:
         killed_name = lobby.players[lobby.last_killed].username
-        night_report += f"💀 Ночью погиб: {killed_name}\n"
+        killed_role = lobby.players[lobby.last_killed].role
+        role_emoji = {"мафия": "🔪", "комиссар": "👮", "доктор": "👨‍⚕️", "мирный": "👤"}
+        emoji = role_emoji.get(killed_role, "👤")
+        night_report += f"💀 Ночью погиб: {killed_name} {emoji} ({killed_role})\n"
     elif lobby.last_saved:
         night_report += "💊 Доктор спас жителя!\n"
     else:
