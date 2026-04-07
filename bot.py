@@ -1157,6 +1157,33 @@ async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, co
 
     await end_night_phase_single_device(context, code, chat_id)
 
+async def end_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
+    if code not in MAFIA_LOBBIES:
+        return
+
+    lobby = MAFIA_LOBBIES[code]
+    lobby.process_night()
+
+    night_report = f"☀️ УТРО НАСТУПИЛО!\n\nДень {lobby.day_number}\n\n"
+
+    if lobby.last_killed:
+        killed_name = lobby.players[lobby.last_killed].username
+        night_report += f"💀 Ночью погиб: {killed_name}\n"
+    elif lobby.last_saved:
+        night_report += "💊 Доктор спас жителя!\n"
+    else:
+        night_report += "✅ Ночь прошла спокойно\n"
+
+    await context.bot.send_message(chat_id=chat_id, text=night_report)
+
+    win_condition = lobby.check_win_condition()
+    if win_condition:
+        await end_mafia_game_single_device(context, code, win_condition, chat_id)
+        return
+
+    await asyncio.sleep(3)
+    await start_day_voting_single_device(context, code, chat_id)
+
 async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
