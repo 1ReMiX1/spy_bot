@@ -481,6 +481,7 @@ async def spy_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = (f"✅ Лобби создано!\n\n📌 Код: <b>{lobby.code}</b>\n"
                 f"🎯 Тема: {theme}\n🌐 Режим: По сети\n👥 Игроков: 1/10\n\n"
+                
                 f"Отправь код друзьям:\n<code>/join {lobby.code}</code>\n\n"
                 f"Запусти игру:\n<code>/startgame {lobby.code}</code>")
         await query.edit_message_text(text=text, parse_mode="HTML")
@@ -1266,9 +1267,7 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         await asyncio.sleep(2)
         await end_night_phase_single_device(context, code, query.message.chat_id)
         return
-
-    # УДАЛИТЕ ВЕСЬ КОД НИЖЕ (это дубликат, который вызывает ошибку)
-
+        
     lobby = MAFIA_LOBBIES[code]
     lobby.process_night()
 
