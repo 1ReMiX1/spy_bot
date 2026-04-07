@@ -134,7 +134,7 @@ class Lobby:
         self.current_reveal_index = 0
         self.roles_assigned = False
         self.player_order = []
-        self.last_message_id = None  # НОВОЕ: для хранения ID последнего сообщения
+        self.last_message_id = None
 
     def add_player(self, user_id, username):
         if user_id not in self.players:
@@ -214,7 +214,7 @@ class MafiaLobby:
         self.current_reveal_index = 0
         self.roles_assigned = False
         self.player_order = []
-        self.last_message_id = None  # НОВОЕ: для хранения ID последнего сообщения
+        self.last_message_id = None
 
     def add_player(self, user_id, username):
         if user_id not in self.players and len(self.players) < 10:
@@ -368,7 +368,6 @@ LOBBIES = {}
 MAFIA_LOBBIES = {}
 WAITING_PLAYER_COUNT = {}
 
-
 # ============= КОМАНДЫ =============
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -516,8 +515,6 @@ async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"Запусти игру:\n<code>/startmafia {lobby.code}</code>")
         await query.edit_message_text(text=text, parse_mode="HTML")
 
-# ============= ОБРАБОТЧИК ВВОДА КОЛИЧЕСТВА ИГРОКОВ =============
-
 async def handle_player_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
@@ -585,8 +582,6 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
             reply_markup=reply_markup
         )
         lobby.last_message_id = sent_message.message_id
-
-# ============= КОМАНДЫ ДЛЯ ШПИОНА (сетевой режим) =============
 
 async def join_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -698,7 +693,6 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lobby = LOBBIES[code]
 
     if lobby.current_reveal_index >= len(lobby.player_order):
-        # ИСПРАВЛЕНИЕ: Удаляем последнее сообщение перед завершением
         try:
             await context.bot.delete_message(
                 chat_id=query.message.chat_id,
@@ -707,7 +701,7 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-        keyboard = [[InlineKeyboardButton("🗳️ Начать голосование", callback_data=f"spy_vote_start_{code}")]]
+        keyboard = [[InlineKeyboardButton("🗳️ Начать голосование", callback_data=f"spy_vote_start_{lobby.code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         sent_message = await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -737,7 +731,6 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(role_text + "\n\n✅ Это был последний игрок!", parse_mode="HTML")
         await asyncio.sleep(3)
         
-        # ИСПРАВЛЕНИЕ: Удаляем сообщение последнего игрока
         try:
             await context.bot.delete_message(
                 chat_id=query.message.chat_id,
@@ -767,7 +760,6 @@ async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lobby = LOBBIES[code]
 
-    # ИСПРАВЛЕНИЕ: Удаляем предыдущее сообщение
     try:
         await query.message.delete()
     except:
@@ -934,8 +926,6 @@ async def finish_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
     if code in LOBBIES:
         del LOBBIES[code]
 
-
-
 # ============= КОМАНДЫ ДЛЯ МАФИИ (сетевой режим) =============
 
 async def join_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1059,7 +1049,6 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     lobby = MAFIA_LOBBIES[code]
 
     if lobby.current_reveal_index >= len(lobby.player_order):
-        # ИСПРАВЛЕНИЕ: Удаляем последнее сообщение
         try:
             await context.bot.delete_message(
                 chat_id=query.message.chat_id,
@@ -1108,7 +1097,6 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(role_text + "\n\n✅ Это был последний игрок!", parse_mode="HTML")
         await asyncio.sleep(3)
         
-        # ИСПРАВЛЕНИЕ: Удаляем сообщение последнего игрока
         try:
             await context.bot.delete_message(
                 chat_id=query.message.chat_id,
@@ -1137,7 +1125,6 @@ async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     lobby = MAFIA_LOBBIES[code]
 
-    # ИСПРАВЛЕНИЕ: Удаляем предыдущее сообщение
     try:
         await query.message.delete()
     except:
@@ -1156,7 +1143,6 @@ async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, co
 
     lobby = MAFIA_LOBBIES[code]
 
-    # ИСПРАВЛЕНИЕ: Мафия выбирает жертву - правильный формат callback_data
     mafia_players_list = [lobby.players[mid] for mid in lobby.get_alive_mafia()]
     if mafia_players_list:
         mafia_names = ', '.join([p.username for p in mafia_players_list])
@@ -1196,7 +1182,6 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
             await asyncio.sleep(2)
             
-            # ИСПРАВЛЕНИЕ: правильный формат callback_data
             keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
                         for pid, p in lobby.get_alive_players().items()]
             
@@ -1208,7 +1193,6 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         elif lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
             await asyncio.sleep(2)
             
-            # ИСПРАВЛЕНИЕ: правильный формат callback_data
             keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
                         for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
             
@@ -1229,7 +1213,6 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
             await asyncio.sleep(2)
             
-            # ИСПРАВЛЕНИЕ: правильный формат callback_data
             keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
                         for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
             
@@ -1733,39 +1716,32 @@ def main():
 
     app = ApplicationBuilder().token("8708766321:AAHEK975FqlBqTusXmedyU9UctMWNKKYCRU").build()
 
-    # Общие команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("top", top_command))
 
-    # Команды для шпиона (сетевой режим)
     app.add_handler(CommandHandler("join", join_lobby))
     app.add_handler(CommandHandler("players", players_command))
     app.add_handler(CommandHandler("leave", leave_lobby))
     app.add_handler(CommandHandler("startgame", start_game))
 
-    # Команды для мафии (сетевой режим)
     app.add_handler(CommandHandler("joinmafia", join_mafia))
     app.add_handler(CommandHandler("mafiapl", mafia_players))
     app.add_handler(CommandHandler("leavemafia", leave_mafia))
     app.add_handler(CommandHandler("startmafia", start_mafia_game))
 
-    # Обработчик ввода количества игроков
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_player_count_input))
 
-    # Callback handlers
     app.add_handler(CallbackQueryHandler(game_choice, pattern=r"^game_"))
     app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
     app.add_handler(CallbackQueryHandler(spy_mode_selected, pattern=r"^spy_mode_"))
     app.add_handler(CallbackQueryHandler(mafia_mode_selected, pattern=r"^mafia_mode_"))
 
-    # Spy single device handlers
     app.add_handler(CallbackQueryHandler(spy_ready_handler, pattern=r"^spy_ready_"))
     app.add_handler(CallbackQueryHandler(spy_next_handler, pattern=r"^spy_next_"))
     app.add_handler(CallbackQueryHandler(spy_vote_start_handler, pattern=r"^spy_vote_start_"))
 
-    # Mafia single device handlers
     app.add_handler(CallbackQueryHandler(mafia_ready_handler, pattern=r"^mafia_ready_"))
     app.add_handler(CallbackQueryHandler(mafia_next_handler, pattern=r"^mafia_next_"))
     app.add_handler(CallbackQueryHandler(mafia_night_action_single, pattern=r"^mafia_(kill|heal|check)_single_"))
@@ -1773,7 +1749,6 @@ def main():
     app.add_handler(CallbackQueryHandler(mafia_confirm_vote_single, pattern=r"^mafia_confirm_single_"))
     app.add_handler(CallbackQueryHandler(mafia_revote_single, pattern=r"^mafia_revote_single_"))
 
-    # Network game handlers
     app.add_handler(CallbackQueryHandler(vote_handler, pattern=r"^vote_"))
     app.add_handler(CallbackQueryHandler(mafia_night_action, pattern=r"^mafia_(kill|heal|check)_"))
     app.add_handler(CallbackQueryHandler(mafia_day_vote, pattern=r"^mafia_vote_"))
