@@ -1215,7 +1215,7 @@ async def end_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code
 
     await context.bot.send_message(chat_id=chat_id, text=night_report)
 
-       win_condition = lobby.check_win_condition()
+    win_condition = lobby.check_win_condition()
     if win_condition:
         await end_mafia_game_single_device(context, code, win_condition, chat_id)
         return
