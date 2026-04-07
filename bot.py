@@ -777,44 +777,44 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
         lobby.last_message_id = sent_message.message_id
 
     elif game_type == "mafia":
-    if count < 4 or count > 10:
-        await update.message.reply_text("❌ Количество игроков: от 4 до 10. Попробуйте снова:")
-        return
+        if count < 4 or count > 10:
+            await update.message.reply_text("❌ Количество игроков: от 4 до 10. Попробуйте снова:")
+            return
 
-    del WAITING_PLAYER_COUNT[user_id]
-
-    lobby = MafiaLobby(host_id=user_id, single_device=True)
-
-    for i in range(1, count + 1):
-        fake_id = user_id * 1000 + i
-        lobby.add_player(fake_id, f"Игрок {i}")
-
-    MAFIA_LOBBIES[lobby.code] = lobby
-    lobby.start_game()
-
-    keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"mafia_ready_{lobby.code}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    sent_message = await update.message.reply_text(
-        f"🎮 МАФИЯ НАЧАЛАСЬ!\n\n👥 Игроков: {count}\n📱 Режим: С одного устройства\n\n"
-        f"👤 Передайте телефон Игроку 1\nНажмите «Готов» чтобы узнать роль",
-        reply_markup=reply_markup
-    )
-    lobby.last_message_id = sent_message.message_id
-
-elif game_type == "crocodile":
-    if count < 2 or count > 10:
-        await update.message.reply_text("❌ Количество игроков: от 2 до 10. Попробуйте снова:")
-        return
-
-    category = state["category"]
-    chat_id = state["chat_id"]
-    
-    try:
-        await crocodile_single_device_start(update, context, count, category, user_id, chat_id)
         del WAITING_PLAYER_COUNT[user_id]
-    except Exception as e:
-        logger.error(f"Ошибка при запуске крокодила: {e}", exc_info=True)
-        await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору")
+
+        lobby = MafiaLobby(host_id=user_id, single_device=True)
+
+        for i in range(1, count + 1):
+            fake_id = user_id * 1000 + i
+            lobby.add_player(fake_id, f"Игрок {i}")
+
+        MAFIA_LOBBIES[lobby.code] = lobby
+        lobby.start_game()
+
+        keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"mafia_ready_{lobby.code}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        sent_message = await update.message.reply_text(
+            f"🎮 МАФИЯ НАЧАЛАСЬ!\n\n👥 Игроков: {count}\n📱 Режим: С одного устройства\n\n"
+            f"👤 Передайте телефон Игроку 1\nНажмите «Готов» чтобы узнать роль",
+            reply_markup=reply_markup
+        )
+        lobby.last_message_id = sent_message.message_id
+
+    elif game_type == "crocodile":
+        if count < 2 or count > 10:
+            await update.message.reply_text("❌ Количество игроков: от 2 до 10. Попробуйте снова:")
+            return
+
+        category = state["category"]
+        chat_id = state["chat_id"]
+        
+        try:
+            await crocodile_single_device_start(update, context, count, category, user_id, chat_id)
+            del WAITING_PLAYER_COUNT[user_id]
+        except Exception as e:
+            logger.error(f"Ошибка при запуске крокодила: {e}", exc_info=True)
+            await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору")
 
 # ============= КОМАНДЫ ШПИОНА (сетевой режим) =============
 
