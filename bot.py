@@ -1,5 +1,5 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 import random
 import string
 from datetime import datetime
@@ -84,75 +84,6 @@ THEMES = {
         "Больница", "Аэропорт", "Вокзал", "Офис", "Банк", "Ресторан", "Отель",
         "Музей", "Театр", "Церковь", "Полиция", "Пожарная", "Спортзал",
     ],
-    "🎬 Фильмы": [
-        "Матрица", "Аватар", "Интерстеллар", "Война миров", "Назад в будущее",
-        "Титаник", "Аватар 2", "Начало", "Дюна", "Звездные войны",
-        "Чужой", "Терминатор", "Робокоп", "Пятый элемент", "Касабланка",
-    ],
-    "🦁 Животные": [
-        "Лев", "Тигр", "Медведь", "Волк", "Лиса", "Заяц", "Олень",
-        "Орел", "Акула", "Крокодил", "Слон", "Жираф", "Зебра", "Панда",
-        "Обезьяна", "Пингвин", "Кит", "Дельфин", "Попугай", "Змея",
-    ],
-    "💼 Профессии": [
-        "Врач", "Учитель", "Полицейский", "Пожарный", "Летчик", "Капитан",
-        "Повар", "Актер", "Художник", "Музыкант", "Архитектор", "Инженер",
-        "Программист", "Юрист", "Ученый", "Водитель", "Парикмахер",
-    ],
-    "🍕 Еда": [
-        "Пицца", "Бургер", "Суши", "Паста", "Салат", "Хлеб", "Сыр",
-        "Колбаса", "Курица", "Рыба", "Говядина", "Макароны", "Рис",
-        "Картофель", "Помидоры", "Огурец", "Каша", "Омлет", "Торт",
-    ],
-    "⚽ Спорт": [
-        "Футбол", "Баскетбол", "Теннис", "Волейбол", "Хоккей", "Лыжи",
-        "Плавание", "Гимнастика", "Боксинг", "Борьба", "Тяжелая атлетика",
-        "Легкая атлетика", "Керлинг", "Фигурное катание", "Серфинг",
-    ],
-    "🎵 Музыка": [
-        "Рок", "Поп", "Джаз", "Классика", "Рэп", "Электро", "Кантри",
-        "Блюз", "Фанк", "Диско", "Метал", "Регги", "Фолк", "Опера",
-        "Симфония", "Концерт", "Балет", "Гимн", "Колыбельная",
-    ],
-    "📚 История": [
-        "Древний Рим", "Средние века", "Ренессанс", "Наполеон", "Викинги",
-        "Пирамиды", "Великая Китайская стена", "Титаник", "Холодная война",
-        "Французская революция", "Средневековый замок", "Мумия", "Крестовый поход",
-    ],
-    "🌍 Природа": [
-        "Лес", "Пустыня", "Полярная область", "Вулкан", "Гейзер", "Водопад",
-        "Каньон", "Ледник", "Болото", "Остров", "Горы", "Долина", "Озеро",
-        "Река", "Пещера", "Скала", "Коралловый риф", "Мангровый лес",
-    ],
-    "🎲 Игры": [
-        "Казино", "Бильярд", "Боулинг", "Шахматы", "Покер", "Дартс",
-        "Видеоигра", "Настольная игра", "Лотерея", "Рулетка", "Лабиринт",
-        "Кроссворд", "Квиз", "Скраббл", "Домино", "Кубик",
-    ],
-    "🎉 Праздники": [
-        "Новый год", "Рождество", "Пасха", "День рождения", "Свадьба",
-        "Хэллоуин", "День Валентина", "День матери", "День отца",
-        "Карнавал", "Масленица", "День Благодарения", "День независимости",
-    ],
-    "🏙️ Города": [
-        "Москва", "Санкт-Петербург", "Нью-Йорк", "Лос-Анджелес", "Чикаго",
-        "Лондон", "Париж", "Берлин", "Токио", "Пекин", "Шанхай",
-        "Индия", "Дели", "Бангкок", "Сингапур", "Гонконг", "Дубай",
-    ],
-    "❄️ Сезоны": [
-        "Зима", "Весна", "Лето", "Осень", "Новый год", "Снег", "Лёд",
-        "Метель", "Вьюга", "Мороз", "Оттепель", "Дождь", "Гром", "Молния",
-    ],
-    "🚗 Техника": [
-        "Автомобиль", "Самолет", "Вертолет", "Поезд", "Метро", "Трамвай",
-        "Корабль", "Подводная лодка", "Танк", "Ракета", "Спутник",
-        "Компьютер", "Смартфон", "Планшет", "Часы", "Телевизор",
-    ],
-    "🎨 Искусство": [
-        "Живопись", "Скульптура", "Архитектура", "Фотография", "Кино",
-        "Театр", "Танец", "Музыка", "Литература", "Поэзия", "Комикс",
-        "Анимация", "Карикатура", "Портрет", "Натюрморт", "Пейзаж",
-    ],
 }
 
 # ============= КЛАССЫ =============
@@ -226,47 +157,29 @@ LOBBIES = {}
 # ============= КОМАНДЫ =============
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = """
-🕵️ Добро пожаловать в ШПИОН! 🕵️
-
-/startlobby - Создать лобби
-/join <код> - Присоединиться
-/startgame <код> - Начать игру
-/players <код> - Список игроков
-/leave <код> - Выйти
-/stats - Твоя статистика
-/top - Топ игроков
-/help - Справка
-"""
-    await update.message.reply_text(text)
+    keyboard = [
+        [InlineKeyboardButton("🕵️ ШПИОН", callback_data="game_spy")],
+        [InlineKeyboardButton("🔪 МАФИЯ", callback_data="game_mafia")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = "👋 Добро пожаловать в GameDAG!\n\nВыбери игру:"
+    await update.message.reply_text(text, reply_markup=reply_markup)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
-📖 КАК ИГРАТЬ:
+📖 КАК ИГРАТЬ В ШПИОНА:
 
-1️⃣ /startlobby - хост создает лобби
-2️⃣ Выбирает тему
-3️⃣ Отправляет код друзьям
-4️⃣ Друзья: /join КОД
-5️⃣ Когда 3+ игроков: /startgame КОД
-6️⃣ Все получат роль в личном сообщении
-7️⃣ Задавайте вопросы друг другу
-8️⃣ После обсуждения - голосование
-9️⃣ Проголосуйте за шпиона!
+1️⃣ Выбери игру ШПИОН
+2️⃣ Выбери тему
+3️⃣ Отправь код друзьям (/join КОД)
+4️⃣ Когда 3+ игроков: /startgame КОД
+5️⃣ Все получат роль в ЛС
+6️⃣ Обсуждайте и голосуйте!
 
-🎯 Правила:
-- Обычные игроки видят локацию
-- Шпион не видит локацию
-- Нужно найти и выбрать шпиона
-- Если выбрали правильно - обычные выигрывают
-- Если нет - шпион выигрывает
+/stats - Статистика
+/top - Топ игроков
 """
-    await update.message.reply_text(text)
-
-async def themes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "📚 Доступные темы:\n\n"
-    for theme, locations in THEMES.items():
-        text += f"{theme}:\n{', '.join(locations[:5])}...\n\n"
     await update.message.reply_text(text)
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -291,11 +204,24 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"{i}. {username} - {wins}/{total} ({win_rate:.1f}%)\n"
     await update.message.reply_text(text)
 
-async def start_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def spy_command(query):
     all_themes = list(THEMES.keys())
     keyboard = [[InlineKeyboardButton(theme, callback_data=f"theme_{theme}")] for theme in all_themes]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🎯 Выберите тему для игры:", reply_markup=reply_markup)
+    await query.edit_message_text("🎯 ШПИОН - Выберите тему:", reply_markup=reply_markup)
+
+async def mafia_command(query):
+    await query.edit_message_text("🔪 МАФИЯ - в разработке! Пока доступен только ШПИОН.")
+
+async def game_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    game = query.data.split("_")[1]
+    
+    if game == "spy":
+        await spy_command(query)
+    else:
+        await mafia_command(query)
 
 async def theme_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -392,7 +318,7 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"Ошибка: {e}")
 
-    await update.message.reply_text(f"✅ ИГРА НАЧАЛАСЬ!\n\n🎯 Локация выбрана\n🕵️ Шпион назначен\n\n📨 Все получили роли!\n\nГолосование через 120 секунд...")
+    await update.message.reply_text(f"✅ ИГРА НАЧАЛАСЬ!\n\n📨 Все получили роли!\n\nГолосование через 120 секунд...")
 
     async def start_voting_task():
         await asyncio.sleep(120)
@@ -444,7 +370,6 @@ async def finish_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
     if code not in LOBBIES:
         return
     lobby = LOBBIES[code]
-    lobby.game_over = True
     expelled_id, max_votes = lobby.get_vote_results()
     
     if expelled_id is None:
@@ -492,18 +417,19 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("themes", themes_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("top", top_command))
-    app.add_handler(CommandHandler("startlobby", start_lobby))
     app.add_handler(CommandHandler("join", join_lobby))
     app.add_handler(CommandHandler("players", players_command))
     app.add_handler(CommandHandler("leave", leave_lobby))
     app.add_handler(CommandHandler("startgame", start_game))
+    
+    app.add_handler(CallbackQueryHandler(game_choice, pattern=r"^game_"))
     app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
     app.add_handler(CallbackQueryHandler(vote_handler, pattern=r"^vote_"))
 
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
