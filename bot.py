@@ -1,4 +1,4 @@
- from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 import random
 import string
