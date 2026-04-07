@@ -1,71 +1,126 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import random
 import string
-from datetime import datetime
 import sqlite3
 import asyncio
+import os
+from contextlib import contextmanager
+import logging
 
-# ============= БАЗА ДАННЫХ =============
+# ============= НАСТРОЙКА ЛОГИРОВАНИЯ =============
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ============= КОНФИГУРАЦИЯ =============
+# ВАЖНО: Используйте переменные окружения для токена!
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', 'YOUR_TOKEN_HERE')
+DB_PATH = 'spy_bot.db'
+
+if BOT_TOKEN == 'YOUR_TOKEN_HERE':
+    logger.error("❌ ОШИБКА: Токен не установлен! Используйте переменную окружения TELEGRAM_BOT_TOKEN")
+    exit(1)
+
+# ============= БАЗА ДАННЫХ (ИСПРАВЛЕНО) =============
+
+@contextmanager
+def get_db_connection():
+    """Безопасное управление соединением с БД"""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn
+    except Exception as e:
+        logger.error(f"Database error: {e}")
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def init_db():
-    conn = sqlite3.connect('spy_bot.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS stats (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        wins INTEGER DEFAULT 0,
-        losses INTEGER DEFAULT 0,
-        total_games INTEGER DEFAULT 0
-    )''')
-    conn.commit()
-    conn.close()
+    """Инициализация базы данных с индексами"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS stats (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            total_games INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        # Индекс для быстрого поиска топа
+        c.execute('''CREATE INDEX IF NOT EXISTS idx_wins 
+                     ON stats(wins DESC, total_games DESC)''')
+        conn.commit()
+        logger.info("✅ База данных инициализирована")
 
 def add_win(user_id, username):
-    conn = sqlite3.connect('spy_bot.db')
-    c = conn.cursor()
-    c.execute('SELECT * FROM stats WHERE user_id = ?', (user_id,))
-    if c.fetchone() is None:
-        c.execute('INSERT INTO stats (user_id, username, wins, total_games) VALUES (?, ?, ?, ?)',
-                  (user_id, username, 1, 1))
-    else:
-        c.execute('UPDATE stats SET wins = wins + 1, total_games = total_games + 1 WHERE user_id = ?',
-                  (user_id,))
-    conn.commit()
-    conn.close()
+    """Добавить победу игроку"""
+    if not username:
+        username = f"User_{user_id}"
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''INSERT INTO stats (user_id, username, wins, total_games) 
+                     VALUES (?, ?, 1, 1)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                     wins = wins + 1,
+                     total_games = total_games + 1,
+                     username = ?,
+                     updated_at = CURRENT_TIMESTAMP''',
+                  (user_id, username, username))
+        conn.commit()
 
 def add_loss(user_id, username):
-    conn = sqlite3.connect('spy_bot.db')
-    c = conn.cursor()
-    c.execute('SELECT * FROM stats WHERE user_id = ?', (user_id,))
-    if c.fetchone() is None:
-        c.execute('INSERT INTO stats (user_id, username, losses, total_games) VALUES (?, ?, ?, ?)',
-                  (user_id, username, 1, 1))
-    else:
-        c.execute('UPDATE stats SET losses = losses + 1, total_games = total_games + 1 WHERE user_id = ?',
-                  (user_id,))
-    conn.commit()
-    conn.close()
+    """Добавить поражение игроку"""
+    if not username:
+        username = f"User_{user_id}"
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''INSERT INTO stats (user_id, username, losses, total_games) 
+                     VALUES (?, ?, 1, 1)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                     losses = losses + 1,
+                     total_games = total_games + 1,
+                     username = ?,
+                     updated_at = CURRENT_TIMESTAMP''',
+                  (user_id, username, username))
+        conn.commit()
 
 def get_user_stats(user_id):
-    conn = sqlite3.connect('spy_bot.db')
-    c = conn.cursor()
-    c.execute('SELECT * FROM stats WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    if result:
-        return {'user_id': result[0], 'username': result[1], 'wins': result[2], 'losses': result[3], 'total_games': result[4]}
+    """Получить статистику игрока"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM stats WHERE user_id = ?', (user_id,))
+        result = c.fetchone()
+        if result:
+            return {
+                'user_id': result[0],
+                'username': result[1],
+                'wins': result[2],
+                'losses': result[3],
+                'total_games': result[4]
+            }
     return None
 
 def get_top_players(limit=10):
-    conn = sqlite3.connect('spy_bot.db')
-    c = conn.cursor()
-    c.execute('SELECT username, wins, total_games FROM stats ORDER BY wins DESC LIMIT ?', (limit,))
-    results = c.fetchall()
-    conn.close()
-    return results
+    """Получить топ игроков"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''SELECT username, wins, total_games 
+                     FROM stats 
+                     WHERE total_games > 0
+                     ORDER BY wins DESC, total_games DESC 
+                     LIMIT ?''', (limit,))
+        return c.fetchall()
 
-# ============= ТЕМЫ =============
+# ============= ТЕМЫ (БЕЗ ИЗМЕНЕНИЙ) =============
 
 THEMES = {
     "🦸 Супергерои": [
@@ -111,12 +166,12 @@ THEMES = {
     ],
 }
 
-# ============= КЛАССЫ ДЛЯ ШПИОНА =============
+# ============= КЛАССЫ (БЕЗ ИЗМЕНЕНИЙ) =============
 
 class Player:
     def __init__(self, user_id, username):
         self.user_id = user_id
-        self.username = username
+        self.username = username or f"Player_{user_id}"
         self.voted = False
 
 class Lobby:
@@ -182,12 +237,10 @@ class Lobby:
         return players_with_max[0], max_votes
 
 
-# ============= КЛАССЫ ДЛЯ МАФИИ =============
-
 class MafiaPlayer:
     def __init__(self, user_id, username):
         self.user_id = user_id
-        self.username = username
+        self.username = username or f"Player_{user_id}"
         self.role = None
         self.alive = True
         self.voted = False
@@ -361,7 +414,6 @@ class MafiaLobby:
             return "mafia"
         return None
 
-
 # ============= ГЛОБАЛЬНЫЕ =============
 
 LOBBIES = {}
@@ -371,6 +423,7 @@ WAITING_PLAYER_COUNT = {}
 # ============= КОМАНДЫ =============
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Стартовое меню"""
     keyboard = [
         [InlineKeyboardButton("🕵️ ШПИОН", callback_data="game_spy")],
         [InlineKeyboardButton("🔪 МАФИЯ", callback_data="game_mafia")]
@@ -380,6 +433,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, reply_markup=reply_markup)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Помощь"""
     text = """
 📖 КАК ИГРАТЬ:
 
@@ -403,6 +457,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Статистика игрока"""
     user_id = update.effective_user.id
     stats = get_user_stats(user_id)
     if not stats:
@@ -416,6 +471,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Топ игроков"""
     top_players = get_top_players(10)
     if not top_players:
         text = "🏆 Топ пуст."
@@ -427,6 +483,7 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def game_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выбор игры"""
     query = update.callback_query
     await query.answer()
     game = query.data.split("_")[1]
@@ -445,6 +502,7 @@ async def game_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🔪 МАФИЯ - Выберите режим:", reply_markup=reply_markup)
 
 async def theme_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выбор темы для шпиона"""
     query = update.callback_query
     await query.answer()
     theme = query.data.split("_", 1)[1]
@@ -457,6 +515,7 @@ async def theme_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"🎯 Тема: {theme}\n\nВыберите режим:", reply_markup=reply_markup)
 
 async def spy_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выбор режима для шпиона"""
     query = update.callback_query
     await query.answer()
 
@@ -481,12 +540,12 @@ async def spy_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = (f"✅ Лобби создано!\n\n📌 Код: <b>{lobby.code}</b>\n"
                 f"🎯 Тема: {theme}\n🌐 Режим: По сети\n👥 Игроков: 1/10\n\n"
-                
                 f"Отправь код друзьям:\n<code>/join {lobby.code}</code>\n\n"
                 f"Запусти игру:\n<code>/startgame {lobby.code}</code>")
         await query.edit_message_text(text=text, parse_mode="HTML")
 
 async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выбор режима для мафии"""
     query = update.callback_query
     await query.answer()
 
@@ -517,6 +576,7 @@ async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=text, parse_mode="HTML")
 
 async def handle_player_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ввода количества игроков"""
     user_id = update.effective_user.id
 
     if user_id not in WAITING_PLAYER_COUNT:
@@ -584,10 +644,13 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
         )
         lobby.last_message_id = sent_message.message_id
 
+# ============= КОМАНДЫ ШПИОНА (сетевой режим) =============
+
 async def join_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Присоединиться к лобби шпиона"""
     user = update.effective_user
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /join <код>")
+        await update.message.reply_text("❌ Использование: /join <код>")
         return
     code = context.args[0].upper()
     if code not in LOBBIES:
@@ -612,8 +675,9 @@ async def join_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Список игроков в лобби"""
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /players <код>")
+        await update.message.reply_text("❌ Использование: /players <код>")
         return
     code = context.args[0].upper()
     if code not in LOBBIES:
@@ -625,9 +689,10 @@ async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def leave_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выйти из лобби"""
     user = update.effective_user
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /leave <код>")
+        await update.message.reply_text("❌ Использование: /leave <код>")
         return
     code = context.args[0].upper()
     if code not in LOBBIES:
@@ -644,9 +709,10 @@ async def leave_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del LOBBIES[code]
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начать игру шпион (сетевой режим)"""
     user = update.effective_user
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /startgame <код>")
+        await update.message.reply_text("❌ Использование: /startgame <код>")
         return
     code = context.args[0].upper()
     if code not in LOBBIES:
@@ -671,7 +737,7 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=player_id, text=role_text, parse_mode="HTML")
         except Exception as e:
-            print(f"Ошибка: {e}")
+            logger.error(f"Ошибка отправки роли игроку {player_id}: {e}")
 
     await update.message.reply_text("✅ ИГРА НАЧАЛАСЬ!\n\n📨 Все получили роли!\n\nГолосование через 120 секунд...")
 
@@ -681,7 +747,10 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.application.create_task(start_voting_task())
 
+# ============= ШПИОН - ОДНО УСТРОЙСТВО =============
+
 async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик готовности игрока (шпион одно устройство)"""
     query = update.callback_query
     await query.answer()
 
@@ -699,8 +768,8 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=query.message.chat_id,
                 message_id=lobby.last_message_id
             )
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
 
         keyboard = [[InlineKeyboardButton("🗳️ Начать голосование", callback_data=f"spy_vote_start_{lobby.code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -737,8 +806,8 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=query.message.chat_id,
                 message_id=lobby.last_message_id
             )
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
         
         keyboard = [[InlineKeyboardButton("🗳️ Начать голосование", callback_data=f"spy_vote_start_{code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -750,6 +819,7 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lobby.last_message_id = sent_message.message_id
 
 async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переход к следующему игроку"""
     query = update.callback_query
     await query.answer()
 
@@ -763,8 +833,8 @@ async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await query.message.delete()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Не удалось удалить сообщение: {e}")
 
     keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"spy_ready_{code}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -774,12 +844,14 @@ async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lobby.last_message_id = sent_message.message_id
 
 async def spy_vote_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало голосования (одно устройство)"""
     query = update.callback_query
     await query.answer()
     code = query.data.split("_")[3]
     await start_voting_single_device(context, code, query.message.chat_id)
 
 async def start_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id=None):
+    """Начать голосование для одного устройства"""
     if code not in LOBBIES:
         return
     lobby = LOBBIES[code]
@@ -794,6 +866,7 @@ async def start_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code: s
     await context.bot.send_message(chat_id=target_chat, text=text, reply_markup=reply_markup)
 
 async def start_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Начать голосование для сетевого режима"""
     if code not in LOBBIES:
         return
     lobby = LOBBIES[code]
@@ -806,14 +879,18 @@ async def start_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
         try:
             await context.bot.send_message(chat_id=player_id, text=text, reply_markup=reply_markup)
         except Exception as e:
-            print(f"Ошибка: {e}")
+            logger.error(f"Ошибка отправки голосования игроку {player_id}: {e}")
+
+# ============= ГОЛОСОВАНИЕ ШПИОН =============
 
 async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик голосования"""
     query = update.callback_query
     await query.answer()
     parts = query.data.split("_")
 
     if parts[1] == "single":
+        # Голосование с одного устройства
         code = parts[2]
         votee_id = int(parts[3])
 
@@ -834,6 +911,7 @@ async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if total_votes >= len(lobby.players):
             await finish_voting_single_device(context, code, query.message.chat_id)
     else:
+        # Сетевое голосование
         code = parts[1]
         votee_id = int(parts[2])
         voter_id = query.from_user.id
@@ -857,6 +935,7 @@ async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await finish_voting(context, code)
 
 async def finish_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
+    """Завершение голосования (одно устройство)"""
     if code not in LOBBIES:
         return
     lobby = LOBBIES[code]
@@ -889,6 +968,7 @@ async def finish_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code: 
         del LOBBIES[code]
 
 async def finish_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Завершение голосования (сетевой режим)"""
     if code not in LOBBIES:
         return
     lobby = LOBBIES[code]
@@ -921,8 +1001,8 @@ async def finish_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
     for player_id in lobby.players:
         try:
             await context.bot.send_message(chat_id=player_id, text=result_text)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки результата игроку {player_id}: {e}")
 
     if code in LOBBIES:
         del LOBBIES[code]
@@ -930,9 +1010,10 @@ async def finish_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
 # ============= КОМАНДЫ ДЛЯ МАФИИ (сетевой режим) =============
 
 async def join_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Присоединиться к мафии"""
     user = update.effective_user
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /joinmafia <код>")
+        await update.message.reply_text("❌ Использование: /joinmafia <код>")
         return
     code = context.args[0].upper()
     if code not in MAFIA_LOBBIES:
@@ -957,8 +1038,9 @@ async def join_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def mafia_players(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Список игроков мафии"""
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /mafiapl <код>")
+        await update.message.reply_text("❌ Использование: /mafiapl <код>")
         return
     code = context.args[0].upper()
     if code not in MAFIA_LOBBIES:
@@ -971,9 +1053,10 @@ async def mafia_players(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def leave_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выйти из мафии"""
     user = update.effective_user
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /leavemafia <код>")
+        await update.message.reply_text("❌ Использование: /leavemafia <код>")
         return
     code = context.args[0].upper()
     if code not in MAFIA_LOBBIES:
@@ -990,9 +1073,10 @@ async def leave_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del MAFIA_LOBBIES[code]
 
 async def start_mafia_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начать игру мафия (сетевой режим)"""
     user = update.effective_user
     if len(context.args) != 1:
-        await update.message.reply_text("❌ /startmafia <код>")
+        await update.message.reply_text("❌ Использование: /startmafia <код>")
         return
     code = context.args[0].upper()
     if code not in MAFIA_LOBBIES:
@@ -1031,13 +1115,16 @@ async def start_mafia_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=player_id, text=role_text, parse_mode="HTML")
         except Exception as e:
-            print(f"Ошибка: {e}")
+            logger.error(f"Ошибка отправки роли игроку {player_id}: {e}")
 
     await update.message.reply_text(f"✅ МАФИЯ НАЧАЛАСЬ!\n\n🌙 Ночь {lobby.day_number}\n📨 Все получили роли!")
     await asyncio.sleep(3)
     await start_night_phase(context, code)
 
+# ============= МАФИЯ - ОДНО УСТРОЙСТВО =============
+
 async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик готовности игрока (мафия одно устройство)"""
     query = update.callback_query
     await query.answer()
 
@@ -1055,8 +1142,8 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chat_id=query.message.chat_id,
                 message_id=lobby.last_message_id
             )
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
 
         sent_message = await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -1103,8 +1190,8 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chat_id=query.message.chat_id,
                 message_id=lobby.last_message_id
             )
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение: {e}")
         
         sent_message = await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -1115,6 +1202,7 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await start_night_phase_single_device(context, code, query.message.chat_id)
 
 async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переход к следующему игроку (мафия)"""
     query = update.callback_query
     await query.answer()
 
@@ -1128,8 +1216,8 @@ async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         await query.message.delete()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Не удалось удалить сообщение: {e}")
 
     keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"mafia_ready_{code}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1138,12 +1226,112 @@ async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
     lobby.last_message_id = sent_message.message_id
 
+# ============= НОЧНЫЕ ДЕЙСТВИЯ (ОДНО УСТРОЙСТВО) - ИСПРАВЛЕНО! =============
+
+async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    ИСПРАВЛЕНО: Завершенная логика ночных действий для одного устройства
+    """
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split("_")
+    action = parts[2]  # kill, heal, check
+    code = parts[3]
+    target_id = int(parts[4])
+
+    if code not in MAFIA_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = MAFIA_LOBBIES[code]
+    target_name = lobby.players[target_id].username
+
+    if action == "kill":
+        # Мафия выбрала жертву
+        for mid in lobby.get_alive_mafia():
+            lobby.add_night_action(mid, target_id)
+
+        await query.edit_message_text(f"🔪 Мафия выбрала: {target_name}")
+        await asyncio.sleep(2)
+
+        # Переход к доктору если жив
+        if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
+            keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
+                        for pid, p in lobby.get_alive_players().items()]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            doctor_name = lobby.players[lobby.doctor_id].username
+            text = f"👨‍⚕️ ДОКТОР ({doctor_name})\nВыберите, кого лечить:"
+            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            return
+
+        # Если доктора нет, переход к комиссару
+        elif lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
+            await asyncio.sleep(1)
+            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
+                        for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            komissar_name = lobby.players[lobby.komissar_id].username
+            text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
+            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            return
+        else:
+            # Нет ни доктора, ни комиссара - завершаем ночь
+            await asyncio.sleep(2)
+            await end_night_phase_single_device(context, code, query.message.chat_id)
+            return
+
+    elif action == "heal":
+        # Доктор выбрал кого лечить
+        if lobby.doctor_id:
+            lobby.add_night_action(lobby.doctor_id, target_id)
+
+        await query.edit_message_text(f"💊 Доктор лечит: {target_name}")
+        await asyncio.sleep(2)
+
+        # Переход к комиссару если жив
+        if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
+            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
+                        for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            komissar_name = lobby.players[lobby.komissar_id].username
+            text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
+            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+            return
+        else:
+            # Комиссара нет - завершаем ночь
+            await asyncio.sleep(2)
+            await end_night_phase_single_device(context, code, query.message.chat_id)
+            return
+
+    elif action == "check":
+        # Комиссар проверил игрока
+        if lobby.komissar_id:
+            lobby.add_night_action(lobby.komissar_id, target_id)
+
+        if target_id in lobby.mafia_ids:
+            result = "🔴 МАФИЯ!"
+        else:
+            result = "🟢 Мирный житель"
+
+        await query.edit_message_text(f"🔍 Комиссар проверил {target_name}:\n{result}")
+        await asyncio.sleep(2)
+        
+        # Все роли отработали - завершаем ночь
+        await end_night_phase_single_device(context, code, query.message.chat_id)
+        return
+
 async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
+    """Начало ночной фазы (одно устройство)"""
     if code not in MAFIA_LOBBIES:
         return
 
     lobby = MAFIA_LOBBIES[code]
 
+    # Проверяем есть ли живая мафия
     mafia_players_list = [lobby.players[mid] for mid in lobby.get_alive_mafia()]
     if mafia_players_list:
         mafia_names = ', '.join([p.username for p in mafia_players_list])
@@ -1156,118 +1344,14 @@ async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, co
         await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         return
 
+    # Мафии нет - сразу переходим к утру
     await end_night_phase_single_device(context, code, chat_id)
 
 async def end_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
+    """Завершение ночной фазы (одно устройство)"""
     if code not in MAFIA_LOBBIES:
         return
 
-    lobby = MAFIA_LOBBIES[code]
-    lobby.process_night()
-
-    night_report = f"☀️ УТРО НАСТУПИЛО!\n\nДень {lobby.day_number}\n\n"
-
-    if lobby.last_killed:
-        killed_name = lobby.players[lobby.last_killed].username
-        night_report += f"💀 Ночью погиб: {killed_name}\n"
-    elif lobby.last_saved:
-        night_report += "💊 Доктор спас жителя!\n"
-    else:
-        night_report += "✅ Ночь прошла спокойно\n"
-
-    await context.bot.send_message(chat_id=chat_id, text=night_report)
-
-    win_condition = lobby.check_win_condition()
-    if win_condition:
-        await end_mafia_game_single_device(context, code, win_condition, chat_id)
-        return
-
-    await asyncio.sleep(3)
-    await start_day_voting_single_device(context, code, chat_id)
-
-async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    parts = query.data.split("_")
-    action = parts[2]
-    code = parts[3]
-    target_id = int(parts[4])
-
-    if code not in MAFIA_LOBBIES:
-        await query.edit_message_text("❌ Игра не найдена.")
-        return
-
-    lobby = MAFIA_LOBBIES[code]
-    target_name = lobby.players[target_id].username
-
-    if action == "kill":
-        for mid in lobby.get_alive_mafia():
-            lobby.add_night_action(mid, target_id)
-
-        await query.edit_message_text(f"🔪 Мафия выбрала: {target_name}")
-        await asyncio.sleep(2)
-
-        if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
-            keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
-                        for pid, p in lobby.get_alive_players().items()]
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            doctor_name = lobby.players[lobby.doctor_id].username
-            text = f"👨‍⚕️ ДОКТОР ({doctor_name})\nВыберите, кого лечить:"
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
-            return
-
-        elif lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
-            await asyncio.sleep(1)
-            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
-                        for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            komissar_name = lobby.players[lobby.komissar_id].username
-            text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
-            return
-        else:
-            await asyncio.sleep(2)
-            await end_night_phase_single_device(context, code, query.message.chat_id)
-            return
-
-    elif action == "heal":
-        if lobby.doctor_id:
-            lobby.add_night_action(lobby.doctor_id, target_id)
-
-        await query.edit_message_text(f"💊 Доктор лечит: {target_name}")
-        await asyncio.sleep(2)
-
-        if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
-            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
-                        for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            komissar_name = lobby.players[lobby.komissar_id].username
-            text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
-            return
-        else:
-            await asyncio.sleep(2)
-            await end_night_phase_single_device(context, code, query.message.chat_id)
-            return
-
-    elif action == "check":
-        if lobby.komissar_id:
-            lobby.add_night_action(lobby.komissar_id, target_id)
-
-        if target_id in lobby.mafia_ids:
-            result = "🔴 МАФИЯ!"
-        else:
-            result = "🟢 Мирный житель"
-
-        await query.edit_message_text(f"🔍 Комиссар проверил {target_name}:\n{result}")
-        await asyncio.sleep(2)
-        await end_night_phase_single_device(context, code, query.message.chat_id)
-        return
-        
     lobby = MAFIA_LOBBIES[code]
     lobby.process_night()
 
@@ -1292,6 +1376,7 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
     await start_day_voting_single_device(context, code, chat_id)
 
 async def start_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
+    """Дневное голосование (одно устройство)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1310,6 +1395,7 @@ async def start_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, cod
     await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
 async def mafia_day_vote_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Голосование днем (одно устройство)"""
     query = update.callback_query
     await query.answer()
 
@@ -1341,6 +1427,7 @@ async def mafia_day_vote_single(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(f"Город решил выгнать: {target_name}\n\nПодтвердить?", reply_markup=reply_markup)
 
 async def mafia_confirm_vote_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подтверждение голосования"""
     query = update.callback_query
     await query.answer()
 
@@ -1355,6 +1442,7 @@ async def mafia_confirm_vote_single(update: Update, context: ContextTypes.DEFAUL
     await end_day_voting_single_device(context, code, query.message.chat_id, expelled_id=target_id)
 
 async def mafia_revote_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переголосование"""
     query = update.callback_query
     await query.answer()
 
@@ -1366,12 +1454,13 @@ async def mafia_revote_single(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         await query.message.delete()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Не удалось удалить сообщение: {e}")
 
     await start_day_voting_single_device(context, code, query.message.chat_id)
 
 async def end_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id, skip=False, expelled_id=None):
+    """Завершение дневного голосования (одно устройство)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1408,6 +1497,7 @@ async def end_day_voting_single_device(context: ContextTypes.DEFAULT_TYPE, code:
     await start_night_phase_single_device(context, code, chat_id)
 
 async def end_mafia_game_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, winner: str, chat_id):
+    """Завершение игры мафия (одно устройство)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1429,11 +1519,15 @@ async def end_mafia_game_single_device(context: ContextTypes.DEFAULT_TYPE, code:
 
     del MAFIA_LOBBIES[code]
 
+# ============= НОЧНЫЕ ДЕЙСТВИЯ (СЕТЕВОЙ РЕЖИМ) =============
+
 async def start_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Начало ночной фазы (сетевой режим)"""
     if code not in MAFIA_LOBBIES:
         return
     lobby = MAFIA_LOBBIES[code]
 
+    # Мафия выбирает жертву
     for mafia_id in lobby.get_alive_mafia():
         alive_targets = [p for pid, p in lobby.get_alive_players().items() if pid not in lobby.mafia_ids]
         if not alive_targets:
@@ -1449,9 +1543,10 @@ async def start_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
                 text="🌙 НОЧЬ - Кого убить?",
                 reply_markup=reply_markup
             )
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки ночного действия мафии {mafia_id}: {e}")
 
+    # Доктор выбирает кого лечить
     if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
         alive_targets = list(lobby.get_alive_players().values())
         keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_{code}_{p.user_id}")]
@@ -1464,9 +1559,10 @@ async def start_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
                 text="🌙 НОЧЬ - Кого лечить?",
                 reply_markup=reply_markup
             )
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки ночного действия доктору: {e}")
 
+    # Комиссар выбирает кого проверить
     if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
         alive_targets = [p for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
         keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_{code}_{p.user_id}")]
@@ -1479,11 +1575,12 @@ async def start_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
                 text="🌙 НОЧЬ - Кого проверить?",
                 reply_markup=reply_markup
             )
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки ночного действия комиссару: {e}")
 
+    # Проверка завершения ночи
     async def check_night_complete():
-        for _ in range(60):
+        for _ in range(60):  # 120 секунд таймаут
             await asyncio.sleep(2)
             if code not in MAFIA_LOBBIES:
                 return
@@ -1491,17 +1588,19 @@ async def start_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
                 await end_night_phase(context, code)
                 return
 
+        # Таймаут - завершаем ночь принудительно
         if code in MAFIA_LOBBIES:
             await end_night_phase(context, code)
 
     context.application.create_task(check_night_complete())
 
 async def mafia_night_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ночных действий (сетевой режим)"""
     query = update.callback_query
     await query.answer()
 
     parts = query.data.split("_")
-    action = parts[1]
+    action = parts[1]  # kill, heal, check
     code = parts[2]
     target_id = int(parts[3])
     player_id = query.from_user.id
@@ -1544,6 +1643,7 @@ async def mafia_night_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(f"🔍 Проверка {target_name}:\n{result}")
 
 async def end_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Завершение ночной фазы (сетевой режим)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1563,8 +1663,8 @@ async def end_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
     for player_id in lobby.players:
         try:
             await context.bot.send_message(chat_id=player_id, text=night_report)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки отчета о ночи игроку {player_id}: {e}")
 
     win_condition = lobby.check_win_condition()
     if win_condition:
@@ -1575,6 +1675,7 @@ async def end_night_phase(context: ContextTypes.DEFAULT_TYPE, code: str):
     await start_day_voting(context, code)
 
 async def start_day_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Начало дневного голосования (сетевой режим)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1594,11 +1695,12 @@ async def start_day_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
     for player_id, player in lobby.get_alive_players().items():
         try:
             await context.bot.send_message(chat_id=player_id, text=text, reply_markup=reply_markup)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки голосования игроку {player_id}: {e}")
 
+    # Проверка завершения голосования
     async def check_votes_complete():
-        for _ in range(60):
+        for _ in range(60):  # 120 секунд таймаут
             await asyncio.sleep(2)
             if code not in MAFIA_LOBBIES:
                 return
@@ -1607,12 +1709,14 @@ async def start_day_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
                 await end_day_voting(context, code)
                 return
 
+        # Таймаут
         if code in MAFIA_LOBBIES:
             await end_day_voting(context, code)
 
     context.application.create_task(check_votes_complete())
 
 async def mafia_day_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка дневного голосования (сетевой режим)"""
     query = update.callback_query
     await query.answer()
 
@@ -1645,6 +1749,7 @@ async def mafia_day_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ Голос за: {target_name}")
 
 async def end_day_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Завершение дневного голосования (сетевой режим)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1669,8 +1774,8 @@ async def end_day_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
     for player_id in lobby.players:
         try:
             await context.bot.send_message(chat_id=player_id, text=day_result)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки результата голосования игроку {player_id}: {e}")
 
     win_condition = lobby.check_win_condition()
     if win_condition:
@@ -1688,13 +1793,14 @@ async def end_day_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
                 chat_id=player_id,
                 text=f"🌙 Наступает ночь {lobby.day_number}..."
             )
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления о ночи игроку {player_id}: {e}")
 
     await asyncio.sleep(2)
     await start_night_phase(context, code)
 
 async def end_mafia_game(context: ContextTypes.DEFAULT_TYPE, code: str, winner: str):
+    """Завершение игры мафия (сетевой режим)"""
     if code not in MAFIA_LOBBIES:
         return
 
@@ -1728,59 +1834,94 @@ async def end_mafia_game(context: ContextTypes.DEFAULT_TYPE, code: str, winner: 
     for player_id in lobby.players:
         try:
             await context.bot.send_message(chat_id=player_id, text=result_text)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка отправки результата игры игроку {player_id}: {e}")
 
     del MAFIA_LOBBIES[code]
+
+# ============= ОБРАБОТКА ОШИБОК =============
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Глобальный обработчик ошибок"""
+    logger.error(f"Исключение при обработке обновления: {context.error}", exc_info=context.error)
+    
+    try:
+        if isinstance(update, Update) and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору."
+            )
+    except Exception as e:
+        logger.error(f"Не удалось отправить сообщение об ошибке: {e}")
 
 # ============= MAIN =============
 
 def main():
-    init_db()
-    print("=" * 50)
-    print("✅ Бот запущен!")
-    print("=" * 50)
+    """Основная функция запуска бота"""
+    try:
+        # Инициализация БД
+        init_db()
+        logger.info("=" * 50)
+        logger.info("✅ Бот запущен!")
+        logger.info("=" * 50)
 
-    app = ApplicationBuilder().token("8708766321:AAHEK975FqlBqTusXmedyU9UctMWNKKYCRU").build()
+        # Создание приложения
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("top", top_command))
+        # Основные команды
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("help", help_command))
+        app.add_handler(CommandHandler("stats", stats_command))
+        app.add_handler(CommandHandler("top", top_command))
 
-    app.add_handler(CommandHandler("join", join_lobby))
-    app.add_handler(CommandHandler("players", players_command))
-    app.add_handler(CommandHandler("leave", leave_lobby))
-    app.add_handler(CommandHandler("startgame", start_game))
+        # Команды для игры Шпион
+        app.add_handler(CommandHandler("join", join_lobby))
+        app.add_handler(CommandHandler("players", players_command))
+        app.add_handler(CommandHandler("leave", leave_lobby))
+        app.add_handler(CommandHandler("startgame", start_game))
 
-    app.add_handler(CommandHandler("joinmafia", join_mafia))
-    app.add_handler(CommandHandler("mafiapl", mafia_players))
-    app.add_handler(CommandHandler("leavemafia", leave_mafia))
-    app.add_handler(CommandHandler("startmafia", start_mafia_game))
+        # Команды для игры Мафия
+        app.add_handler(CommandHandler("joinmafia", join_mafia))
+        app.add_handler(CommandHandler("mafiapl", mafia_players))
+        app.add_handler(CommandHandler("leavemafia", leave_mafia))
+        app.add_handler(CommandHandler("startmafia", start_mafia_game))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_player_count_input))
+        # Обработчик текстовых сообщений
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_player_count_input))
 
-    app.add_handler(CallbackQueryHandler(game_choice, pattern=r"^game_"))
-    app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
-    app.add_handler(CallbackQueryHandler(spy_mode_selected, pattern=r"^spy_mode_"))
-    app.add_handler(CallbackQueryHandler(mafia_mode_selected, pattern=r"^mafia_mode_"))
+        # Callback handlers - основные
+        app.add_handler(CallbackQueryHandler(game_choice, pattern=r"^game_"))
+        app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
+        app.add_handler(CallbackQueryHandler(spy_mode_selected, pattern=r"^spy_mode_"))
+        app.add_handler(CallbackQueryHandler(mafia_mode_selected, pattern=r"^mafia_mode_"))
 
-    app.add_handler(CallbackQueryHandler(spy_ready_handler, pattern=r"^spy_ready_"))
-    app.add_handler(CallbackQueryHandler(spy_next_handler, pattern=r"^spy_next_"))
-    app.add_handler(CallbackQueryHandler(spy_vote_start_handler, pattern=r"^spy_vote_start_"))
+        # Callback handlers - Шпион одно устройство
+        app.add_handler(CallbackQueryHandler(spy_ready_handler, pattern=r"^spy_ready_"))
+        app.add_handler(CallbackQueryHandler(spy_next_handler, pattern=r"^spy_next_"))
+        app.add_handler(CallbackQueryHandler(spy_vote_start_handler, pattern=r"^spy_vote_start_"))
 
-    app.add_handler(CallbackQueryHandler(mafia_ready_handler, pattern=r"^mafia_ready_"))
-    app.add_handler(CallbackQueryHandler(mafia_next_handler, pattern=r"^mafia_next_"))
-    app.add_handler(CallbackQueryHandler(mafia_night_action_single, pattern=r"^mafia_(kill|heal|check)_single_"))
-    app.add_handler(CallbackQueryHandler(mafia_day_vote_single, pattern=r"^mafia_vote_single_"))
-    app.add_handler(CallbackQueryHandler(mafia_confirm_vote_single, pattern=r"^mafia_confirm_single_"))
-    app.add_handler(CallbackQueryHandler(mafia_revote_single, pattern=r"^mafia_revote_single_"))
+        # Callback handlers - Мафия одно устройство
+        app.add_handler(CallbackQueryHandler(mafia_ready_handler, pattern=r"^mafia_ready_"))
+        app.add_handler(CallbackQueryHandler(mafia_next_handler, pattern=r"^mafia_next_"))
+        app.add_handler(CallbackQueryHandler(mafia_night_action_single, pattern=r"^mafia_(kill|heal|check)_single_"))
+        app.add_handler(CallbackQueryHandler(mafia_day_vote_single, pattern=r"^mafia_vote_single_"))
+        app.add_handler(CallbackQueryHandler(mafia_confirm_vote_single, pattern=r"^mafia_confirm_single_"))
+        app.add_handler(CallbackQueryHandler(mafia_revote_single, pattern=r"^mafia_revote_single_"))
 
-    app.add_handler(CallbackQueryHandler(vote_handler, pattern=r"^vote_"))
-    app.add_handler(CallbackQueryHandler(mafia_night_action, pattern=r"^mafia_(kill|heal|check)_"))
-    app.add_handler(CallbackQueryHandler(mafia_day_vote, pattern=r"^mafia_vote_"))
+        # Callback handlers - голосование и действия
+        app.add_handler(CallbackQueryHandler(vote_handler, pattern=r"^vote_"))
+        app.add_handler(CallbackQueryHandler(mafia_night_action, pattern=r"^mafia_(kill|heal|check)_"))
+        app.add_handler(CallbackQueryHandler(mafia_day_vote, pattern=r"^mafia_vote_"))
 
-    app.run_polling()
+        # Обработчик ошибок
+        app.add_error_handler(error_handler)
+
+        # Запуск бота
+        logger.info("🤖 Бот начинает получать обновления...")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    except Exception as e:
+        logger.critical(f"❌ Критическая ошибка при запуске бота: {e}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
