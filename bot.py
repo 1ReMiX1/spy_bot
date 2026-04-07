@@ -1,4 +1,4 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 import random
 import string
@@ -134,6 +134,7 @@ class Lobby:
         self.current_reveal_index = 0
         self.roles_assigned = False
         self.player_order = []
+        self.last_message_id = None  # НОВОЕ: для хранения ID последнего сообщения
 
     def add_player(self, user_id, username):
         if user_id not in self.players:
@@ -213,6 +214,7 @@ class MafiaLobby:
         self.current_reveal_index = 0
         self.roles_assigned = False
         self.player_order = []
+        self.last_message_id = None  # НОВОЕ: для хранения ID последнего сообщения
 
     def add_player(self, user_id, username):
         if user_id not in self.players and len(self.players) < 10:
@@ -364,10 +366,8 @@ class MafiaLobby:
 
 LOBBIES = {}
 MAFIA_LOBBIES = {}
-
-# Храним состояние ожидания ввода количества игроков
-# user_id -> {"type": "spy"/"mafia", "theme": ..., "chat_id": ...}
 WAITING_PLAYER_COUNT = {}
+
 
 # ============= КОМАНДЫ =============
 
@@ -466,7 +466,6 @@ async def spy_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     theme = "_".join(parts[3:])
 
     if mode == "single":
-        # Запрашиваем количество игроков без создания лобби
         WAITING_PLAYER_COUNT[query.from_user.id] = {
             "type": "spy",
             "theme": theme,
@@ -477,7 +476,6 @@ async def spy_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Введите количество игроков (от 3 до 10):"
         )
     else:
-        # Сетевой режим — создаём лобби сразу
         lobby = Lobby(host_id=query.from_user.id, theme=theme, single_device=False)
         lobby.add_player(query.from_user.id, query.from_user.username or "Игрок")
         LOBBIES[lobby.code] = lobby
@@ -499,7 +497,6 @@ async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
     username = query.from_user.username or "Игрок"
 
     if mode == "single":
-        # Запрашиваем количество игроков без создания лобби
         WAITING_PLAYER_COUNT[user_id] = {
             "type": "mafia",
             "chat_id": query.message.chat_id
@@ -509,7 +506,6 @@ async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
             "Введите количество игроков (от 4 до 10):"
         )
     else:
-        # Сетевой режим — создаём лобби сразу
         lobby = MafiaLobby(host_id=user_id, single_device=False)
         lobby.add_player(user_id, username)
         MAFIA_LOBBIES[lobby.code] = lobby
@@ -526,7 +522,7 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
     user_id = update.effective_user.id
 
     if user_id not in WAITING_PLAYER_COUNT:
-        return  # Пользователь не ждёт ввода — игнорируем
+        return
 
     state = WAITING_PLAYER_COUNT[user_id]
     text = update.message.text.strip()
@@ -554,17 +550,16 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
             lobby.add_player(fake_id, f"Игрок {i}")
 
         LOBBIES[lobby.code] = lobby
-
-        # Сразу запускаем игру
         lobby.start_game()
 
         keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"spy_ready_{lobby.code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
+        sent_message = await update.message.reply_text(
             f"🎮 ИГРА НАЧАЛАСЬ!\n\n🎯 Тема: {theme}\n👥 Игроков: {count}\n📱 Режим: С одного устройства\n\n"
             f"👤 Передайте телефон Игроку 1\nНажмите «Готов» чтобы узнать роль",
             reply_markup=reply_markup
         )
+        lobby.last_message_id = sent_message.message_id
 
     elif game_type == "mafia":
         if count < 4 or count > 10:
@@ -580,17 +575,16 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
             lobby.add_player(fake_id, f"Игрок {i}")
 
         MAFIA_LOBBIES[lobby.code] = lobby
-
-        # Сразу запускаем игру
         lobby.start_game()
 
         keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"mafia_ready_{lobby.code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
+        sent_message = await update.message.reply_text(
             f"🎮 МАФИЯ НАЧАЛАСЬ!\n\n👥 Игроков: {count}\n📱 Режим: С одного устройства\n\n"
             f"👤 Передайте телефон Игроку 1\nНажмите «Готов» чтобы узнать роль",
             reply_markup=reply_markup
         )
+        lobby.last_message_id = sent_message.message_id
 
 # ============= КОМАНДЫ ДЛЯ ШПИОНА (сетевой режим) =============
 
@@ -673,7 +667,6 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Минимум 3 игрока.")
         return
 
-    # Сетевой режим
     for player_id, player in lobby.players.items():
         if player_id in lobby.spy_ids:
             role_text = "🕵️ ТЫ - ШПИОН!\n\nУзнай локацию, не выдав себя!"
@@ -705,11 +698,23 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lobby = LOBBIES[code]
 
     if lobby.current_reveal_index >= len(lobby.player_order):
-        await query.edit_message_text("✅ Все игроки узнали роли!\n\n⏰ Обсудите и начните голосование когда будете готовы...")
+        # ИСПРАВЛЕНИЕ: Удаляем последнее сообщение перед завершением
+        try:
+            await context.bot.delete_message(
+                chat_id=query.message.chat_id,
+                message_id=lobby.last_message_id
+            )
+        except:
+            pass
 
         keyboard = [[InlineKeyboardButton("🗳️ Начать голосование", callback_data=f"spy_vote_start_{code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Когда будете готовы — начните голосование:", reply_markup=reply_markup)
+        sent_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✅ Все игроки узнали роли!\n\n⏰ Обсудите и начните голосование когда будете готовы:",
+            reply_markup=reply_markup
+        )
+        lobby.last_message_id = sent_message.message_id
         return
 
     player_id = lobby.player_order[lobby.current_reveal_index]
@@ -731,10 +736,24 @@ async def spy_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text(role_text + "\n\n✅ Это был последний игрок!", parse_mode="HTML")
         await asyncio.sleep(3)
+        
+        # ИСПРАВЛЕНИЕ: Удаляем сообщение последнего игрока
+        try:
+            await context.bot.delete_message(
+                chat_id=query.message.chat_id,
+                message_id=lobby.last_message_id
+            )
+        except:
+            pass
+        
         keyboard = [[InlineKeyboardButton("🗳️ Начать голосование", callback_data=f"spy_vote_start_{code}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("⏰ Обсудите между собой!\n\nКогда будете готовы, начните голосование:",
-                                       reply_markup=reply_markup)
+        sent_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="⏰ Обсудите между собой!\n\nКогда будете готовы, начните голосование:",
+            reply_markup=reply_markup
+        )
+        lobby.last_message_id = sent_message.message_id
 
 async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -748,6 +767,7 @@ async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lobby = LOBBIES[code]
 
+    # ИСПРАВЛЕНИЕ: Удаляем предыдущее сообщение
     try:
         await query.message.delete()
     except:
@@ -757,7 +777,8 @@ async def spy_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = (f"👤 Передайте телефон Игроку {lobby.current_reveal_index + 1}\n\n"
             f"Нажмите «Готов» чтобы узнать роль")
-    await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+    sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+    lobby.last_message_id = sent_message.message_id
 
 async def spy_vote_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -913,6 +934,8 @@ async def finish_voting(context: ContextTypes.DEFAULT_TYPE, code: str):
     if code in LOBBIES:
         del LOBBIES[code]
 
+
+
 # ============= КОМАНДЫ ДЛЯ МАФИИ (сетевой режим) =============
 
 async def join_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -995,7 +1018,6 @@ async def start_mafia_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Минимум 4 игрока.")
         return
 
-    # Сетевой режим
     for player_id, player in lobby.players.items():
         role_emoji = {"мафия": "🔪", "комиссар": "👮", "доктор": "👨‍⚕️", "мирный": "👤"}
         role_name = player.role.upper()
@@ -1037,7 +1059,20 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     lobby = MAFIA_LOBBIES[code]
 
     if lobby.current_reveal_index >= len(lobby.player_order):
-        await query.edit_message_text("✅ Все игроки узнали роли!\n\n🌙 Начинается первая ночь...")
+        # ИСПРАВЛЕНИЕ: Удаляем последнее сообщение
+        try:
+            await context.bot.delete_message(
+                chat_id=query.message.chat_id,
+                message_id=lobby.last_message_id
+            )
+        except:
+            pass
+
+        sent_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✅ Все игроки узнали роли!\n\n🌙 Начинается первая ночь..."
+        )
+        lobby.last_message_id = sent_message.message_id
         await asyncio.sleep(3)
         await start_night_phase_single_device(context, code, query.message.chat_id)
         return
@@ -1072,7 +1107,21 @@ async def mafia_ready_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await query.edit_message_text(role_text + "\n\n✅ Это был последний игрок!", parse_mode="HTML")
         await asyncio.sleep(3)
-        await query.message.reply_text("🌙 Начинается первая ночь...")
+        
+        # ИСПРАВЛЕНИЕ: Удаляем сообщение последнего игрока
+        try:
+            await context.bot.delete_message(
+                chat_id=query.message.chat_id,
+                message_id=lobby.last_message_id
+            )
+        except:
+            pass
+        
+        sent_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="🌙 Начинается первая ночь..."
+        )
+        lobby.last_message_id = sent_message.message_id
         await asyncio.sleep(2)
         await start_night_phase_single_device(context, code, query.message.chat_id)
 
@@ -1088,6 +1137,7 @@ async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     lobby = MAFIA_LOBBIES[code]
 
+    # ИСПРАВЛЕНИЕ: Удаляем предыдущее сообщение
     try:
         await query.message.delete()
     except:
@@ -1097,7 +1147,8 @@ async def mafia_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = (f"👤 Передайте телефон Игроку {lobby.current_reveal_index + 1}\n\n"
             f"Нажмите «Готов» чтобы узнать роль")
-    await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+    sent_message = await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup)
+    lobby.last_message_id = sent_message.message_id
 
 async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id):
     if code not in MAFIA_LOBBIES:
@@ -1105,13 +1156,14 @@ async def start_night_phase_single_device(context: ContextTypes.DEFAULT_TYPE, co
 
     lobby = MAFIA_LOBBIES[code]
 
-    # Мафия выбирает жертву
+    # ИСПРАВЛЕНИЕ: Мафия выбирает жертву - правильный формат callback_data
     mafia_players_list = [lobby.players[mid] for mid in lobby.get_alive_mafia()]
     if mafia_players_list:
         mafia_names = ', '.join([p.username for p in mafia_players_list])
-        alive_targets = [p for pid, p in lobby.get_alive_players().items() if pid not in lobby.mafia_ids]
-        keyboard = [[InlineKeyboardButton(f"🔪 {p.username}", callback_data=f"mafia_kill_single_{code}_{p.user_id}")]
-                    for p in alive_targets]
+        
+        keyboard = [[InlineKeyboardButton(f"🔪 {p.username}", callback_data=f"mafia_kill_single_{code}_{pid}")]
+                    for pid, p in lobby.get_alive_players().items() if pid not in lobby.mafia_ids]
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         text = f"🌙 НОЧЬ {lobby.day_number}\n\n🔪 МАФИЯ ({mafia_names})\nВыберите жертву:"
         await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
@@ -1143,9 +1195,11 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
 
         if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
             await asyncio.sleep(2)
-            alive_targets = list(lobby.get_alive_players().values())
-            keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{p.user_id}")]
-                        for p in alive_targets]
+            
+            # ИСПРАВЛЕНИЕ: правильный формат callback_data
+            keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
+                        for pid, p in lobby.get_alive_players().items()]
+            
             reply_markup = InlineKeyboardMarkup(keyboard)
             doctor_name = lobby.players[lobby.doctor_id].username
             text = f"👨‍⚕️ ДОКТОР ({doctor_name})\nВыберите, кого лечить:"
@@ -1153,9 +1207,11 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
 
         elif lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
             await asyncio.sleep(2)
-            alive_targets = [p for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
-            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{p.user_id}")]
-                        for p in alive_targets]
+            
+            # ИСПРАВЛЕНИЕ: правильный формат callback_data
+            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
+                        for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
+            
             reply_markup = InlineKeyboardMarkup(keyboard)
             komissar_name = lobby.players[lobby.komissar_id].username
             text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
@@ -1172,9 +1228,11 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
 
         if lobby.komissar_id and lobby.players[lobby.komissar_id].alive:
             await asyncio.sleep(2)
-            alive_targets = [p for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
-            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{p.user_id}")]
-                        for p in alive_targets]
+            
+            # ИСПРАВЛЕНИЕ: правильный формат callback_data
+            keyboard = [[InlineKeyboardButton(f"🔍 {p.username}", callback_data=f"mafia_check_single_{code}_{pid}")]
+                        for pid, p in lobby.get_alive_players().items() if pid != lobby.komissar_id]
+            
             reply_markup = InlineKeyboardMarkup(keyboard)
             komissar_name = lobby.players[lobby.komissar_id].username
             text = f"👮 КОМИССАР ({komissar_name})\nВыберите, кого проверить:"
