@@ -801,20 +801,20 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
         )
         lobby.last_message_id = sent_message.message_id
 
-    elif game_type == "crocodile":
-    if count < 2 or count > 10:
-        await update.message.reply_text("❌ Количество игроков: от 2 до 10. Попробуйте снова:")
-        return
+       elif game_type == "crocodile":
+        if count < 2 or count > 10:
+            await update.message.reply_text("❌ Количество игроков: от 2 до 10. Попробуйте снова:")
+            return
 
-    category = state["category"]
-    chat_id = state["chat_id"]
-    
-    try:
-        await crocodile_single_device_start(update, context, count, category, user_id, chat_id)
-        del WAITING_PLAYER_COUNT[user_id]
-    except Exception as e:
-        logger.error(f"Ошибка при запуске крокодила: {e}", exc_info=True)
-        await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору")
+        category = state["category"]
+        chat_id = state["chat_id"]
+        
+        try:
+            await crocodile_single_device_start(update, context, count, category, user_id, chat_id)
+            del WAITING_PLAYER_COUNT[user_id]
+        except Exception as e:
+            logger.error(f"Ошибка при запуске крокодила: {e}", exc_info=True)
+            await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору")
 
 # ============= КОМАНДЫ ШПИОНА (сетевой режим) =============
 
