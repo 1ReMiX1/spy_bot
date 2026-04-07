@@ -1205,7 +1205,7 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
             lobby.add_night_action(mid, target_id)
 
         await query.edit_message_text(f"🔪 Мафия выбрала: {target_name}")
-        await asyncio.sleep(2)  # Даем время на прочтение
+        await asyncio.sleep(2)
 
         if lobby.doctor_id and lobby.players[lobby.doctor_id].alive:
             keyboard = [[InlineKeyboardButton(f"💊 {p.username}", callback_data=f"mafia_heal_single_{code}_{pid}")]
@@ -1266,6 +1266,8 @@ async def mafia_night_action_single(update: Update, context: ContextTypes.DEFAUL
         await asyncio.sleep(2)
         await end_night_phase_single_device(context, code, query.message.chat_id)
         return
+
+    # УДАЛИТЕ ВЕСЬ КОД НИЖЕ (это дубликат, который вызывает ошибку)
 
     lobby = MAFIA_LOBBIES[code]
     lobby.process_night()
