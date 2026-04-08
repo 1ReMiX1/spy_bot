@@ -212,6 +212,8 @@ CROCODILE_WORDS = {
 
 # ============= КЛАССЫ (БЕЗ ИЗМЕНЕНИЙ) =============
 
+# ============= КЛАССЫ =============
+
 class Player:
     def __init__(self, user_id, username):
         self.user_id = user_id
@@ -281,6 +283,8 @@ class Lobby:
         return players_with_max[0], max_votes
 
 
+# ============= МАФИЯ =============
+
 class MafiaPlayer:
     def __init__(self, user_id, username):
         self.user_id = user_id
@@ -313,103 +317,6 @@ class MafiaLobby:
         self.player_order = []
         self.last_message_id = None
 
-    # ============= КЛАССЫ ДЛЯ КРОКОДИЛА =============
-
-class CrocodilePlayer:
-    def __init__(self, user_id, username):
-        self.user_id = user_id
-        self.username = username or f"Player_{user_id}"
-        self.score = 0
-        self.is_explaining = False
-
-class CrocodileLobby:
-    def __init__(self, host_id, category, single_device=False):
-        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-        self.host_id = host_id
-        self.category = category
-        self.players = {}
-        self.started = False
-        self.current_word = None
-        self.current_explainer_id = None
-        self.round_number = 0
-        self.total_rounds = 10
-        self.used_words = set()
-        self.game_type = "crocodile"
-        self.single_device = single_device
-        self.current_reveal_index = 0
-        self.player_order = []
-        self.last_message_id = None
-        self.timer_task = None
-        self.time_limit = 60  # секунд на объяснение
-
-    def add_player(self, user_id, username):
-        if user_id not in self.players and len(self.players) < 10:
-            self.players[user_id] = CrocodilePlayer(user_id, username)
-            return True
-        return False
-
-    def remove_player(self, user_id):
-        if user_id in self.players:
-            self.players.pop(user_id)
-            return True
-        return False
-
-    def get_players_list(self, show_scores=False):
-        players_text = ""
-        for i, (uid, player) in enumerate(self.players.items(), 1):
-            score_text = f" - {player.score} 🏆" if show_scores else ""
-            players_text += f"{i}. {player.username}{score_text}\n"
-        return players_text
-
-    def start_game(self):
-        if len(self.players) < 2:
-            return False
-        self.started = True
-        self.player_order = list(self.players.keys())
-        random.shuffle(self.player_order)
-        return True
-
-    def get_next_word(self):
-        """Получить следующее неиспользованное слово"""
-        available_words = [w for w in CROCODILE_WORDS[self.category] if w not in self.used_words]
-        if not available_words:
-            # Если все слова использованы, сбрасываем
-            self.used_words.clear()
-            available_words = CROCODILE_WORDS[self.category]
-        
-        word = random.choice(available_words)
-        self.used_words.add(word)
-        return word
-
-    def next_round(self):
-        """Переход к следующему раунду"""
-        self.round_number += 1
-        explainer_index = (self.round_number - 1) % len(self.player_order)
-        self.current_explainer_id = self.player_order[explainer_index]
-        self.current_word = self.get_next_word()
-        
-        for player in self.players.values():
-            player.is_explaining = False
-        self.players[self.current_explainer_id].is_explaining = True
-
-    def add_score(self, player_id, points=1):
-        """Добавить очки игроку"""
-        if player_id in self.players:
-            self.players[player_id].score += points
-
-    def get_leaderboard(self):
-        """Получить таблицу лидеров"""
-        sorted_players = sorted(self.players.items(), key=lambda x: x[1].score, reverse=True)
-        leaderboard = "🏆 ТАБЛИЦА ЛИДЕРОВ:\n\n"
-        for i, (uid, player) in enumerate(sorted_players, 1):
-            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
-            leaderboard += f"{medal} {player.username} - {player.score} очков\n"
-        return leaderboard
-
-    def check_game_end(self):
-        """Проверить, закончилась ли игра"""
-        return self.round_number >= self.total_rounds
-        
     def add_player(self, user_id, username):
         if user_id not in self.players and len(self.players) < 10:
             self.players[user_id] = MafiaPlayer(user_id, username)
@@ -440,10 +347,7 @@ class CrocodileLobby:
         player_count = len(self.players)
         player_ids = list(self.players.keys())
 
-        if player_count >= 7:
-            mafia_count = 2
-        else:
-            mafia_count = 1
+        mafia_count = 2 if player_count >= 7 else 1
 
         mafia_ids = random.sample(player_ids, mafia_count)
         self.mafia_ids = set(mafia_ids)
@@ -474,9 +378,7 @@ class CrocodileLobby:
     def get_players_list(self, show_status=False):
         players_text = ""
         for i, (uid, player) in enumerate(self.players.items(), 1):
-            status = ""
-            if show_status:
-                status = " 💀" if not player.alive else " ✅"
+            status = " 💀" if show_status and not player.alive else (" ✅" if show_status else "")
             players_text += f"{i}. {player.username}{status}\n"
         return players_text
 
@@ -488,15 +390,10 @@ class CrocodileLobby:
         alive_mafia = self.get_alive_mafia()
         if alive_mafia and not any(mid in self.night_actions for mid in alive_mafia):
             return False
-
-        if self.doctor_id and self.players[self.doctor_id].alive:
-            if self.doctor_id not in self.night_actions:
-                return False
-
-        if self.komissar_id and self.players[self.komissar_id].alive:
-            if self.komissar_id not in self.night_actions:
-                return False
-
+        if self.doctor_id and self.players[self.doctor_id].alive and self.doctor_id not in self.night_actions:
+            return False
+        if self.komissar_id and self.players[self.komissar_id].alive and self.komissar_id not in self.night_actions:
+            return False
         return True
 
     def process_night(self):
@@ -506,15 +403,8 @@ class CrocodileLobby:
                 mafia_target = self.night_actions[mid]
                 break
 
-        doctor_target = None
-        if self.doctor_id and self.doctor_id in self.night_actions:
-            doctor_target = self.night_actions[self.doctor_id]
-
-        komissar_check = None
-        if self.komissar_id and self.komissar_id in self.night_actions:
-            komissar_check = self.night_actions[self.komissar_id]
-            self.last_checked = komissar_check
-
+        doctor_target = self.night_actions.get(self.doctor_id)
+        
         self.last_killed = None
         self.last_saved = None
 
@@ -536,7 +426,8 @@ class CrocodileLobby:
     def get_vote_results(self):
         vote_counts = {}
         for votee_id in self.votes.values():
-            vote_counts[votee_id] = vote_counts.get(votee_id, 0) + 1
+            if votee_id is not None:
+                vote_counts[votee_id] = vote_counts.get(votee_id, 0) + 1
         if not vote_counts:
             return None, 0
         max_votes = max(vote_counts.values())
@@ -548,12 +439,101 @@ class CrocodileLobby:
     def check_win_condition(self):
         alive_mafia = len(self.get_alive_mafia())
         alive_civilians = len(self.get_alive_civilians())
-
         if alive_mafia == 0:
             return "civilians"
         if alive_mafia >= alive_civilians:
             return "mafia"
         return None
+
+
+# ============= КРОКОДИЛ =============
+
+class CrocodilePlayer:
+    def __init__(self, user_id, username):
+        self.user_id = user_id
+        self.username = username or f"Player_{user_id}"
+        self.score = 0
+        self.is_explaining = False
+
+class CrocodileLobby:
+    def __init__(self, host_id, category, single_device=False):
+        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.host_id = host_id
+        self.category = category
+        self.players = {}
+        self.started = False
+        self.current_word = None
+        self.current_explainer_id = None
+        self.round_number = 0
+        self.total_rounds = 10
+        self.used_words = set()
+        self.game_type = "crocodile"
+        self.single_device = single_device
+        self.current_reveal_index = 0
+        self.player_order = []
+        self.last_message_id = None
+        self.timer_task = None
+        self.time_limit = 60
+
+    def add_player(self, user_id, username):
+        if user_id not in self.players and len(self.players) < 10:
+            self.players[user_id] = CrocodilePlayer(user_id, username)
+            return True
+        return False
+
+    def remove_player(self, user_id):
+        if user_id in self.players:
+            self.players.pop(user_id)
+            return True
+        return False
+
+    def get_players_list(self, show_scores=False):
+        players_text = ""
+        for i, (uid, player) in enumerate(self.players.items(), 1):
+            score_text = f" - {player.score} 🏆" if show_scores else ""
+            players_text += f"{i}. {player.username}{score_text}\n"
+        return players_text
+
+    def start_game(self):
+        if len(self.players) < 2:
+            return False
+        self.started = True
+        self.player_order = list(self.players.keys())
+        random.shuffle(self.player_order)
+        return True
+
+    def get_next_word(self):
+        available_words = [w for w in CROCODILE_WORDS[self.category] if w not in self.used_words]
+        if not available_words:
+            self.used_words.clear()
+            available_words = CROCODILE_WORDS[self.category]
+        word = random.choice(available_words)
+        self.used_words.add(word)
+        return word
+
+    def next_round(self):
+        self.round_number += 1
+        explainer_index = (self.round_number - 1) % len(self.player_order)
+        self.current_explainer_id = self.player_order[explainer_index]
+        self.current_word = self.get_next_word()
+        for player in self.players.values():
+            player.is_explaining = False
+        self.players[self.current_explainer_id].is_explaining = True
+
+    def add_score(self, player_id, points=1):
+        if player_id in self.players:
+            self.players[player_id].score += points
+
+    def get_leaderboard(self):
+        sorted_players = sorted(self.players.items(), key=lambda x: x[1].score, reverse=True)
+        leaderboard = "🏆 ТАБЛИЦА ЛИДЕРОВ:\n\n"
+        for i, (uid, player) in enumerate(sorted_players, 1):
+            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+            leaderboard += f"{medal} {player.username} - {player.score} очков\n"
+        return leaderboard
+
+    def check_game_end(self):
+        return self.round_number >= self.total_rounds
 
 # ============= ГЛОБАЛЬНЫЕ =============
 
