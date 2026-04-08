@@ -712,89 +712,324 @@ async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"Запусти игру:\n<code>/startmafia {lobby.code}</code>")
         await query.edit_message_text(text=text, parse_mode="HTML")
 
-async def handle_player_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка ввода количества игроков"""
-    user_id = update.effective_user.id
+# ============= КЛАССЫ =============
 
-    if user_id not in WAITING_PLAYER_COUNT:
-        return
+class Player:
+    def __init__(self, user_id, username):
+        self.user_id = user_id
+        self.username = username or f"Player_{user_id}"
+        self.voted = False
 
-    state = WAITING_PLAYER_COUNT[user_id]
-    text = update.message.text.strip()
+class Lobby:
+    def __init__(self, host_id, theme, single_device=False):
+        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.host_id = host_id
+        self.theme = theme
+        self.players = {}
+        self.spy_ids = set()
+        self.location = None
+        self.started = False
+        self.voting = False
+        self.votes = {}
+        self.single_device = single_device
+        self.current_reveal_index = 0
+        self.roles_assigned = False
+        self.player_order = []
+        self.last_message_id = None
 
-    try:
-        count = int(text)
-    except ValueError:
-        await update.message.reply_text("❌ Введите число!")
-        return
+    def add_player(self, user_id, username):
+        if user_id not in self.players:
+            self.players[user_id] = Player(user_id, username)
+            return True
+        return False
 
-    game_type = state["type"]
+    def remove_player(self, user_id):
+        if user_id in self.players:
+            self.players.pop(user_id)
+            return True
+        return False
 
-    if game_type == "spy":
-        if count < 3 or count > 10:
-            await update.message.reply_text("❌ Количество игроков: от 3 до 10. Попробуйте снова:")
-            return
+    def start_game(self):
+        if len(self.players) < 3:
+            return False
+        self.location = random.choice(THEMES[self.theme])
+        spy_count = max(1, len(self.players) // 5)
+        spy_ids = random.sample(list(self.players.keys()), spy_count)
+        self.spy_ids = set(spy_ids)
+        self.started = True
+        self.player_order = list(self.players.keys())
+        return True
 
-        del WAITING_PLAYER_COUNT[user_id]
+    def get_players_list(self):
+        players_text = ""
+        for i, (uid, player) in enumerate(self.players.items(), 1):
+            players_text += f"{i}. {player.username}\n"
+        return players_text
 
-        theme = state["theme"]
-        lobby = Lobby(host_id=user_id, theme=theme, single_device=True)
+    def add_vote(self, voter_id, votee_id):
+        self.votes[voter_id] = votee_id
+        self.players[voter_id].voted = True
 
-        for i in range(1, count + 1):
-            fake_id = user_id * 1000 + i
-            lobby.add_player(fake_id, f"Игрок {i}")
+    def get_vote_results(self):
+        vote_counts = {}
+        for votee_id in self.votes.values():
+            vote_counts[votee_id] = vote_counts.get(votee_id, 0) + 1
+        if not vote_counts:
+            return None, 0
+        max_votes = max(vote_counts.values())
+        players_with_max = [uid for uid, count in vote_counts.items() if count == max_votes]
+        if len(players_with_max) > 1:
+            return None, max_votes
+        return players_with_max[0], max_votes
 
-        LOBBIES[lobby.code] = lobby
-        lobby.start_game()
 
-        keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"spy_ready_{lobby.code}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        sent_message = await update.message.reply_text(
-            f"🎮 ИГРА НАЧАЛАСЬ!\n\n🎯 Тема: {theme}\n👥 Игроков: {count}\n📱 Режим: С одного устройства\n\n"
-            f"👤 Передайте телефон Игроку 1\nНажмите «Готов» чтобы узнать роль",
-            reply_markup=reply_markup
-        )
-        lobby.last_message_id = sent_message.message_id
+class MafiaPlayer:
+    def __init__(self, user_id, username):
+        self.user_id = user_id
+        self.username = username or f"Player_{user_id}"
+        self.role = None
+        self.alive = True
+        self.voted = False
+        self.night_action_done = False
 
-    elif game_type == "mafia":
-        if count < 4 or count > 10:
-            await update.message.reply_text("❌ Количество игроков: от 4 до 10. Попробуйте снова:")
-            return
+class MafiaLobby:
+    def __init__(self, host_id, single_device=False):
+        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.host_id = host_id
+        self.players = {}
+        self.mafia_ids = set()
+        self.komissar_id = None
+        self.doctor_id = None
+        self.started = False
+        self.phase = "waiting"
+        self.day_number = 0
+        self.votes = {}
+        self.night_actions = {}
+        self.last_killed = None
+        self.last_saved = None
+        self.last_checked = None
+        self.game_type = "mafia"
+        self.single_device = single_device
+        self.current_reveal_index = 0
+        self.roles_assigned = False
+        self.player_order = []
+        self.last_message_id = None
 
-        del WAITING_PLAYER_COUNT[user_id]
+    def add_player(self, user_id, username):
+        if user_id not in self.players and len(self.players) < 10:
+            self.players[user_id] = MafiaPlayer(user_id, username)
+            return True
+        return False
 
-        lobby = MafiaLobby(host_id=user_id, single_device=True)
+    def remove_player(self, user_id):
+        if user_id in self.players:
+            self.players.pop(user_id)
+            return True
+        return False
 
-        for i in range(1, count + 1):
-            fake_id = user_id * 1000 + i
-            lobby.add_player(fake_id, f"Игрок {i}")
+    def get_alive_players(self):
+        return {uid: p for uid, p in self.players.items() if p.alive}
 
-        MAFIA_LOBBIES[lobby.code] = lobby
-        lobby.start_game()
+    def get_alive_civilians(self):
+        return {uid: p for uid, p in self.get_alive_players().items()
+                if uid not in self.mafia_ids}
 
-        keyboard = [[InlineKeyboardButton("✅ Готов", callback_data=f"mafia_ready_{lobby.code}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        sent_message = await update.message.reply_text(
-            f"🎮 МАФИЯ НАЧАЛАСЬ!\n\n👥 Игроков: {count}\n📱 Режим: С одного устройства\n\n"
-            f"👤 Передайте телефон Игроку 1\nНажмите «Готов» чтобы узнать роль",
-            reply_markup=reply_markup
-        )
-        lobby.last_message_id = sent_message.message_id
+    def get_alive_mafia(self):
+        return {uid: p for uid, p in self.get_alive_players().items()
+                if uid in self.mafia_ids}
 
-    elif game_type == "crocodile":
-        if count < 2 or count > 10:
-            await update.message.reply_text("❌ Количество игроков: от 2 до 10. Попробуйте снова:")
-            return
+    def start_game(self):
+        if len(self.players) < 4:
+            return False
 
-        category = state["category"]
-        chat_id = state["chat_id"]
+        player_count = len(self.players)
+        player_ids = list(self.players.keys())
+
+        mafia_count = 2 if player_count >= 7 else 1
+
+        mafia_ids = random.sample(player_ids, mafia_count)
+        self.mafia_ids = set(mafia_ids)
+        for mid in mafia_ids:
+            self.players[mid].role = "мафия"
+
+        remaining = [pid for pid in player_ids if pid not in mafia_ids]
+
+        if player_count >= 5 and remaining:
+            self.komissar_id = random.choice(remaining)
+            self.players[self.komissar_id].role = "комиссар"
+            remaining.remove(self.komissar_id)
+
+        if player_count >= 6 and remaining:
+            self.doctor_id = random.choice(remaining)
+            self.players[self.doctor_id].role = "доктор"
+            remaining.remove(self.doctor_id)
+
+        for pid in remaining:
+            self.players[pid].role = "мирный"
+
+        self.started = True
+        self.phase = "night"
+        self.day_number = 1
+        self.player_order = list(self.players.keys())
+        return True
+
+    def get_players_list(self, show_status=False):
+        players_text = ""
+        for i, (uid, player) in enumerate(self.players.items(), 1):
+            status = " 💀" if show_status and not player.alive else (" ✅" if show_status else "")
+            players_text += f"{i}. {player.username}{status}\n"
+        return players_text
+
+    def add_night_action(self, player_id, target_id):
+        self.night_actions[player_id] = target_id
+        self.players[player_id].night_action_done = True
+
+    def check_night_actions_complete(self):
+        alive_mafia = self.get_alive_mafia()
+        if alive_mafia and not any(mid in self.night_actions for mid in alive_mafia):
+            return False
+        if self.doctor_id and self.players[self.doctor_id].alive and self.doctor_id not in self.night_actions:
+            return False
+        if self.komissar_id and self.players[self.komissar_id].alive and self.komissar_id not in self.night_actions:
+            return False
+        return True
+
+    def process_night(self):
+        mafia_target = None
+        for mid in self.get_alive_mafia():
+            if mid in self.night_actions:
+                mafia_target = self.night_actions[mid]
+                break
+
+        doctor_target = self.night_actions.get(self.doctor_id)
         
-        try:
-            await crocodile_single_device_start(update, context, count, category, user_id, chat_id)
-            del WAITING_PLAYER_COUNT[user_id]
-        except Exception as e:
-            logger.error(f"Ошибка при запуске крокодила: {e}", exc_info=True)
-            await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору")
+        self.last_killed = None
+        self.last_saved = None
+
+        if mafia_target:
+            if mafia_target == doctor_target:
+                self.last_saved = mafia_target
+            else:
+                self.players[mafia_target].alive = False
+                self.last_killed = mafia_target
+
+        self.night_actions = {}
+        for player in self.players.values():
+            player.night_action_done = False
+
+    def add_vote(self, voter_id, votee_id):
+        self.votes[voter_id] = votee_id
+        self.players[voter_id].voted = True
+
+    def get_vote_results(self):
+        vote_counts = {}
+        for votee_id in self.votes.values():
+            if votee_id is not None:
+                vote_counts[votee_id] = vote_counts.get(votee_id, 0) + 1
+        if not vote_counts:
+            return None, 0
+        max_votes = max(vote_counts.values())
+        players_with_max = [uid for uid, count in vote_counts.items() if count == max_votes]
+        if len(players_with_max) > 1:
+            return None, max_votes
+        return players_with_max[0], max_votes
+
+    def check_win_condition(self):
+        alive_mafia = len(self.get_alive_mafia())
+        alive_civilians = len(self.get_alive_civilians())
+        if alive_mafia == 0:
+            return "civilians"
+        if alive_mafia >= alive_civilians:
+            return "mafia"
+        return None
+
+
+class CrocodilePlayer:
+    def __init__(self, user_id, username):
+        self.user_id = user_id
+        self.username = username or f"Player_{user_id}"
+        self.score = 0
+        self.is_explaining = False
+
+class CrocodileLobby:
+    def __init__(self, host_id, category, single_device=False):
+        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.host_id = host_id
+        self.category = category
+        self.players = {}
+        self.started = False
+        self.current_word = None
+        self.current_explainer_id = None
+        self.round_number = 0
+        self.total_rounds = 10
+        self.used_words = set()
+        self.game_type = "crocodile"
+        self.single_device = single_device
+        self.current_reveal_index = 0
+        self.player_order = []
+        self.last_message_id = None
+        self.timer_task = None
+        self.time_limit = 60
+
+    def add_player(self, user_id, username):
+        if user_id not in self.players and len(self.players) < 10:
+            self.players[user_id] = CrocodilePlayer(user_id, username)
+            return True
+        return False
+
+    def remove_player(self, user_id):
+        if user_id in self.players:
+            self.players.pop(user_id)
+            return True
+        return False
+
+    def get_players_list(self, show_scores=False):
+        players_text = ""
+        for i, (uid, player) in enumerate(self.players.items(), 1):
+            score_text = f" - {player.score} 🏆" if show_scores else ""
+            players_text += f"{i}. {player.username}{score_text}\n"
+        return players_text
+
+    def start_game(self):
+        if len(self.players) < 2:
+            return False
+        self.started = True
+        self.player_order = list(self.players.keys())
+        random.shuffle(self.player_order)
+        return True
+
+    def get_next_word(self):
+        available_words = [w for w in CROCODILE_WORDS[self.category] if w not in self.used_words]
+        if not available_words:
+            self.used_words.clear()
+            available_words = CROCODILE_WORDS[self.category]
+        word = random.choice(available_words)
+        self.used_words.add(word)
+        return word
+
+    def next_round(self):
+        self.round_number += 1
+        explainer_index = (self.round_number - 1) % len(self.player_order)
+        self.current_explainer_id = self.player_order[explainer_index]
+        self.current_word = self.get_next_word()
+        for player in self.players.values():
+            player.is_explaining = False
+        self.players[self.current_explainer_id].is_explaining = True
+
+    def add_score(self, player_id, points=1):
+        if player_id in self.players:
+            self.players[player_id].score += points
+
+    def get_leaderboard(self):
+        sorted_players = sorted(self.players.items(), key=lambda x: x[1].score, reverse=True)
+        leaderboard = "🏆 ТАБЛИЦА ЛИДЕРОВ:\n\n"
+        for i, (uid, player) in enumerate(sorted_players, 1):
+            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+            leaderboard += f"{medal} {player.username} - {player.score} очков\n"
+        return leaderboard
+
+    def check_game_end(self):
+        return self.round_number >= self.total_rounds
 
 # ============= КОМАНДЫ ШПИОНА (сетевой режим) =============
 
