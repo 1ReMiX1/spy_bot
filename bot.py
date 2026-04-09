@@ -119,6 +119,40 @@ def get_top_players(limit=10):
                      ORDER BY wins DESC, total_games DESC 
                      LIMIT ?''', (limit,))
         return c.fetchall()
+        # ============= КРОКОДИЛ - СЛОВА =============
+
+CROCODILE_WORDS = {
+    "🟢 Легкие": [
+        "кот", "собака", "дом", "машина", "дерево", "книга", "стол", "стул",
+        "телефон", "вода", "хлеб", "рыба", "птица", "цветок", "солнце",
+        "луна", "звезда", "река", "гора", "море", "лес", "поле", "город",
+        "школа", "доктор", "учитель", "повар", "актер", "мяч", "велосипед",
+        "самолет", "корабль", "поезд", "автобус", "яблоко", "банан",
+        "апельсин", "помидор", "огурец", "морковь", "слон", "жираф",
+        "медведь", "лев", "тигр", "обезьяна", "заяц", "змея", "черепаха",
+        "попугай", "пожарный", "рюкзак", "зонт", "очки", "часы", "ключ",
+    ],
+    "🟡 Средние": [
+        "библиотека", "компьютер", "телевизор", "холодильник", "микроволновка",
+        "пылесос", "кондиционер", "лифт", "эскалатор", "супергерой",
+        "волшебник", "пират", "рыцарь", "принцесса", "динозавр", "дракон",
+        "единорог", "баскетбол", "футбол", "теннис", "плавание", "гимнастика",
+        "фотограф", "художник", "музыкант", "певец", "танцор", "космонавт",
+        "подводная лодка", "вертолет", "ракета", "радуга", "молния",
+        "шоколад", "мороженое", "пицца", "суши", "гамбургер", "аквариум",
+        "зоопарк", "цирк", "карусель", "батут", "водопад", "вулкан",
+    ],
+    "🔴 Сложные": [
+        "телепортация", "клонирование", "гравитация", "эволюция", "революция",
+        "философия", "психология", "дирижер", "архитектор", "программист",
+        "хирург", "дипломат", "парламент", "правительство", "конституция",
+        "реинкарнация", "медитация", "гипноз", "телекинез", "экстрасенс",
+        "инфляция", "монополия", "санкции", "абсурд", "парадокс",
+        "иллюзия", "галлюцинация", "прокрастинация", "импровизация",
+        "манипуляция", "провокация", "реабилитация", "конфиденциальность",
+    ],
+}
+
 
 # ============= ТЕМЫ (БЕЗ ИЗМЕНЕНИЙ) =============
 
@@ -413,12 +447,92 @@ class MafiaLobby:
         if alive_mafia >= alive_civilians:
             return "mafia"
         return None
+# ============= КРОКОДИЛ - КЛАСС =============
+
+class CrocodileLobby:
+    def __init__(self, host_id, difficulty, single_device=False):
+        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.host_id = host_id
+        self.players = {}
+        self.difficulty = difficulty
+        self.single_device = single_device
+        self.started = False
+        self.current_word = None
+        self.words_used = set()
+        self.current_explainer_index = 0
+        self.player_order = []
+        self.scores = {}
+        self.round_number = 1
+        self.max_rounds = 3
+        self.words_per_turn = 3
+        self.words_explained_this_turn = 0
+        self.correct_this_turn = 0
+        self.last_message_id = None
+        self.waiting_guess = False  # Для сетевого режима
+
+    def add_player(self, user_id, username):
+        if user_id not in self.players and len(self.players) < 10:
+            self.players[user_id] = Player(user_id, username)
+            self.scores[user_id] = 0
+            return True
+        return False
+
+    def remove_player(self, user_id):
+        if user_id in self.players:
+            self.players.pop(user_id)
+            self.scores.pop(user_id, None)
+            return True
+        return False
+
+    def get_current_explainer_id(self):
+        if not self.player_order:
+            return None
+        return self.player_order[self.current_explainer_index % len(self.player_order)]
+
+    def get_next_word(self):
+        words = CROCODILE_WORDS[self.difficulty]
+        available = [w for w in words if w not in self.words_used]
+        if not available:
+            self.words_used.clear()
+            available = words
+        word = random.choice(available)
+        self.words_used.add(word)
+        self.current_word = word
+        return word
+
+    def next_turn(self):
+        self.current_explainer_index += 1
+        self.words_explained_this_turn = 0
+        self.correct_this_turn = 0
+        if self.current_explainer_index % len(self.player_order) == 0:
+            self.round_number += 1
+
+    def is_game_over(self):
+        return self.round_number > self.max_rounds
+
+    def get_scoreboard(self):
+        sorted_scores = sorted(self.scores.items(), key=lambda x: x[1], reverse=True)
+        text = "🏆 СЧЁТ:\n"
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (uid, score) in enumerate(sorted_scores, 1):
+            medal = medals[i - 1] if i <= 3 else f"{i}."
+            name = self.players[uid].username if uid in self.players else f"Игрок {uid}"
+            text += f"{medal} {name} — {score} очков\n"
+        return text
+
+    def get_players_list(self):
+        text = ""
+        for i, (uid, player) in enumerate(self.players.items(), 1):
+            text += f"{i}. {player.username}\n"
+        return text
 
 # ============= ГЛОБАЛЬНЫЕ =============
 
 LOBBIES = {}
 MAFIA_LOBBIES = {}
+CROCODILE_LOBBIES = {}
 WAITING_PLAYER_COUNT = {}
+CROCODILE_GUESSING = {}  # code -> True, для сетевого режима
 
 # ============= КОМАНДЫ =============
 
@@ -426,7 +540,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Стартовое меню"""
     keyboard = [
         [InlineKeyboardButton("🕵️ ШПИОН", callback_data="game_spy")],
-        [InlineKeyboardButton("🔪 МАФИЯ", callback_data="game_mafia")]
+        [InlineKeyboardButton("🔪 МАФИЯ", callback_data="game_mafia")],
+        [InlineKeyboardButton("🐊 КРОКОДИЛ", callback_data="game_crocodile")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "👋 Добро пожаловать в GameDAG!\n\nВыбери игру:"
@@ -493,13 +608,25 @@ async def game_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton(theme, callback_data=f"theme_{theme}")] for theme in all_themes]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("🎯 ШПИОН - Выберите тему:", reply_markup=reply_markup)
-    else:
+
+    elif game == "mafia":
         keyboard = [
             [InlineKeyboardButton("🌐 Игра по сети", callback_data="mafia_mode_network")],
             [InlineKeyboardButton("📱 С одного устройства", callback_data="mafia_mode_single")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("🔪 МАФИЯ - Выберите режим:", reply_markup=reply_markup)
+
+    elif game == "crocodile":
+        keyboard = [
+            [InlineKeyboardButton(diff, callback_data=f"croc_diff_{diff}")]
+            for diff in CROCODILE_WORDS.keys()
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "🐊 КРОКОДИЛ\n\nОдин объясняет — остальные угадывают!\n\nВыберите сложность слов:",
+            reply_markup=reply_markup
+        )
 
 async def theme_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Выбор темы для шпиона"""
@@ -579,6 +706,55 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
     """Обработка ввода количества игроков"""
     user_id = update.effective_user.id
 
+        # Проверяем угадывание в крокодиле (сетевой режим)
+    for code, is_active in list(CROCODILE_GUESSING.items()):
+        if code in CROCODILE_LOBBIES and is_active:
+            lobby = CROCODILE_LOBBIES[code]
+            if user_id in lobby.players:
+                explainer_id = lobby.get_current_explainer_id()
+                if user_id != explainer_id:
+                    guess = update.message.text.strip().lower()
+                    correct = lobby.current_word.lower() if lobby.current_word else ""
+                    if guess == correct:
+                        guesser_name = lobby.players[user_id].username
+                        lobby.scores[user_id] = lobby.scores.get(user_id, 0) + 1
+                        for pid in lobby.players:
+                            try:
+                                await context.bot.send_message(
+                                    chat_id=pid,
+                                    text=f"🎉 <b>{guesser_name}</b> угадал слово <b>{lobby.current_word}</b>!\n+1 очко!\n\n{lobby.get_scoreboard()}",
+                                    parse_mode="HTML"
+                                )
+                            except Exception:
+                                pass
+                        await asyncio.sleep(2)
+                        lobby.words_explained_this_turn += 1
+                        if lobby.words_explained_this_turn >= lobby.words_per_turn:
+                            CROCODILE_GUESSING[code] = False
+                            await croc_next_turn_network(context, code)
+                        else:
+                            word = lobby.get_next_word()
+                            explainer = lobby.players[explainer_id]
+                            try:
+                                keyboard = [
+                                    [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_correct_{code}")],
+                                    [InlineKeyboardButton("⏭️ Пропустить слово", callback_data=f"croc_skip_{code}")]
+                                ]
+                                reply_markup = InlineKeyboardMarkup(keyboard)
+                                remaining = lobby.words_per_turn - lobby.words_explained_this_turn
+                                await context.bot.send_message(
+                                    chat_id=explainer_id,
+                                    text=(f"🔤 СЛЕДУЮЩЕЕ СЛОВО:\n\n<b>「 {word.upper()} 」</b>\n\n"
+                                          f"📝 Осталось: {remaining}"),
+                                    reply_markup=reply_markup,
+                                    parse_mode="HTML"
+                                )
+                            except Exception:
+                                pass
+                    else:
+                        await update.message.reply_text(f"❌ Не угадал! Попробуй ещё раз")
+                return
+
     if user_id not in WAITING_PLAYER_COUNT:
         return
 
@@ -643,6 +819,582 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
             reply_markup=reply_markup
         )
         lobby.last_message_id = sent_message.message_id
+
+    elif game_type == "crocodile":
+        if count < 2 or count > 10:
+            await update.message.reply_text("❌ Количество игроков: от 2 до 10. Попробуйте снова:")
+            return
+
+        del WAITING_PLAYER_COUNT[user_id]
+
+        difficulty = state["difficulty"]
+        lobby = CrocodileLobby(host_id=user_id, difficulty=difficulty, single_device=True)
+
+        for i in range(1, count + 1):
+            fake_id = user_id * 1000 + i
+            lobby.add_player(fake_id, f"Игрок {i}")
+
+        CROCODILE_LOBBIES[lobby.code] = lobby
+        lobby.started = True
+        lobby.player_order = list(lobby.players.keys())
+        random.shuffle(lobby.player_order)
+
+        chat_id = state["chat_id"]
+        await update.message.reply_text(
+            f"🐊 КРОКОДИЛ НАЧАЛСЯ!\n\n"
+            f"🎯 Сложность: {difficulty}\n"
+            f"👥 Игроков: {count}\n"
+            f"🔄 Раундов: {lobby.max_rounds}\n"
+            f"📝 Слов за ход: {lobby.words_per_turn}\n\n"
+            f"Каждый по очереди объясняет слово!\n\n"
+            f"Начинает Игрок 1!"
+        )
+        await asyncio.sleep(2)
+        await croc_start_single_device(context, lobby.code, chat_id)
+
+# ============= КРОКОДИЛ - ВСЕ ФУНКЦИИ =============
+
+async def croc_difficulty_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выбор сложности крокодила"""
+    query = update.callback_query
+    await query.answer()
+    difficulty = query.data.split("croc_diff_")[1]
+    keyboard = [
+        [InlineKeyboardButton("🌐 Игра по сети", callback_data=f"croc_mode_network_{difficulty}")],
+        [InlineKeyboardButton("📱 С одного устройства", callback_data=f"croc_mode_single_{difficulty}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"🐊 КРОКОДИЛ\n🎯 Сложность: {difficulty}\n\nВыберите режим:",
+        reply_markup=reply_markup
+    )
+
+async def croc_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выбор режима крокодила"""
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split("_")
+    # croc_mode_network_🟢 Легкие  ->  parts: ['croc', 'mode', 'network', '🟢 Легкие']
+    mode = parts[2]
+    difficulty = "_".join(parts[3:])
+
+    user_id = query.from_user.id
+    username = query.from_user.username or "Игрок"
+
+    if mode == "single":
+        WAITING_PLAYER_COUNT[user_id] = {
+            "type": "crocodile",
+            "difficulty": difficulty,
+            "chat_id": query.message.chat_id
+        }
+        await query.edit_message_text(
+            f"🐊 КРОКОДИЛ\n📱 Режим: С одного устройства\n🎯 Сложность: {difficulty}\n\n"
+            f"Введите количество игроков (от 2 до 10):"
+        )
+    else:
+        lobby = CrocodileLobby(host_id=user_id, difficulty=difficulty, single_device=False)
+        lobby.add_player(user_id, username)
+        CROCODILE_LOBBIES[lobby.code] = lobby
+
+        text = (f"✅ Лобби КРОКОДИЛА создано!\n\n📌 Код: <b>{lobby.code}</b>\n"
+                f"🎯 Сложность: {difficulty}\n🌐 Режим: По сети\n"
+                f"👥 Игроков: 1/10\n\n📍 Минимум 2 игрока\n\n"
+                f"Отправь код друзьям:\n<code>/joincrocodile {lobby.code}</code>\n\n"
+                f"Запусти игру:\n<code>/startcrocodile {lobby.code}</code>")
+        await query.edit_message_text(text=text, parse_mode="HTML")
+
+# ── Сетевые команды ──────────────────────────────────────────────
+
+async def join_crocodile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Присоединиться к лобби крокодила"""
+    user = update.effective_user
+    if len(context.args) != 1:
+        await update.message.reply_text("❌ Использование: /joincrocodile <код>")
+        return
+    code = context.args[0].upper()
+    if code not in CROCODILE_LOBBIES:
+        await update.message.reply_text(f"❌ Лобби {code} не найдено.")
+        return
+    lobby = CROCODILE_LOBBIES[code]
+    if lobby.single_device:
+        await update.message.reply_text("❌ Это лобби для игры с одного устройства.")
+        return
+    if lobby.started:
+        await update.message.reply_text("❌ Игра уже началась.")
+        return
+    if user.id in lobby.players:
+        await update.message.reply_text("❌ Ты уже в лобби.")
+        return
+    if not lobby.add_player(user.id, user.username or "Игрок"):
+        await update.message.reply_text("❌ Лобби переполнено.")
+        return
+    text = (f"✅ Присоединился к крокодилу!\n\n📌 Код: {code}\n"
+            f"🎯 Сложность: {lobby.difficulty}\n👥 Игроков: {len(lobby.players)}/10")
+    await update.message.reply_text(text)
+
+async def start_crocodile_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начать игру крокодил (сетевой режим)"""
+    user = update.effective_user
+    if len(context.args) != 1:
+        await update.message.reply_text("❌ Использование: /startcrocodile <код>")
+        return
+    code = context.args[0].upper()
+    if code not in CROCODILE_LOBBIES:
+        await update.message.reply_text("❌ Лобби не найдено.")
+        return
+    lobby = CROCODILE_LOBBIES[code]
+    if lobby.host_id != user.id:
+        await update.message.reply_text("❌ Только хост может начать.")
+        return
+    if lobby.started:
+        await update.message.reply_text("❌ Игра уже запущена.")
+        return
+    if len(lobby.players) < 2:
+        await update.message.reply_text("❌ Минимум 2 игрока.")
+        return
+
+    lobby.started = True
+    lobby.player_order = list(lobby.players.keys())
+    random.shuffle(lobby.player_order)
+
+    # Сообщаем всем что игра началась
+    for player_id, player in lobby.players.items():
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=(f"🐊 КРОКОДИЛ НАЧАЛСЯ!\n\n🎯 Сложность: {lobby.difficulty}\n"
+                      f"🔄 Раундов: {lobby.max_rounds}\n📝 Слов за ход: {lobby.words_per_turn}\n\n"
+                      f"Когда придёт твой черёд объяснять — ты получишь слово.\n"
+                      f"Остальные отправляют боту свои варианты!")
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки сообщения игроку {player_id}: {e}")
+
+    await update.message.reply_text("✅ КРОКОДИЛ НАЧАЛСЯ!")
+    await asyncio.sleep(2)
+    await croc_start_turn_network(context, code)
+
+async def croc_start_turn_network(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Начало хода в сетевом режиме"""
+    if code not in CROCODILE_LOBBIES:
+        return
+    lobby = CROCODILE_LOBBIES[code]
+
+    if lobby.is_game_over():
+        await croc_end_game_network(context, code)
+        return
+
+    explainer_id = lobby.get_current_explainer_id()
+    explainer = lobby.players[explainer_id]
+    word = lobby.get_next_word()
+    lobby.words_explained_this_turn = 0
+    lobby.waiting_guess = True
+    CROCODILE_GUESSING[code] = True
+
+    round_info = f"🔄 Раунд {lobby.round_number}/{lobby.max_rounds}"
+    turn_info = (f"🎤 Объясняет: <b>{explainer.username}</b>\n"
+                 f"📝 Слов осталось в ходе: {lobby.words_per_turn - lobby.words_explained_this_turn}")
+
+    # Объясняющему — слово
+    try:
+        keyboard = [
+            [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_correct_{code}")],
+            [InlineKeyboardButton("⏭️ Пропустить слово", callback_data=f"croc_skip_{code}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await context.bot.send_message(
+            chat_id=explainer_id,
+            text=(f"🐊 ТВОЙ ХОД!\n\n{round_info}\n\n"
+                  f"🔤 ТВОЁ СЛОВО:\n\n<b>「 {word.upper()} 」</b>\n\n"
+                  f"Объясняй — не называй само слово!\nКогда угадают — нажми «Угадали!»"),
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка отправки слова объясняющему: {e}")
+
+    # Остальным — ждать
+    for player_id, player in lobby.players.items():
+        if player_id == explainer_id:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=(f"🐊 {round_info}\n\n"
+                      f"🎤 Объясняет: <b>{explainer.username}</b>\n\n"
+                      f"Пиши мне свои варианты ответа!"),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления игроку {player_id}: {e}")
+
+async def croc_correct_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Слово угадано (нажал объясняющий)"""
+    query = update.callback_query
+    await query.answer("✅ Слово угадано!")
+
+    code = query.data.split("croc_correct_")[1]
+    if code not in CROCODILE_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = CROCODILE_LOBBIES[code]
+    explainer_id = lobby.get_current_explainer_id()
+
+    # Начисляем очко объясняющему
+    lobby.scores[explainer_id] = lobby.scores.get(explainer_id, 0) + 1
+    lobby.words_explained_this_turn += 1
+    lobby.correct_this_turn += 1
+
+    guessed_word = lobby.current_word
+    explainer_name = lobby.players[explainer_id].username
+
+    await query.edit_message_text(
+        f"✅ Угадано!\n\nСлово было: <b>{guessed_word}</b>\n\n{lobby.get_scoreboard()}",
+        parse_mode="HTML"
+    )
+
+    # Уведомляем остальных
+    for player_id, player in lobby.players.items():
+        if player_id == explainer_id:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=f"✅ Слово угадано!\n\nСлово было: <b>{guessed_word}</b>\n+1 очко → {explainer_name}\n\n{lobby.get_scoreboard()}",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка уведомления: {e}")
+
+    await asyncio.sleep(2)
+
+    # Следующее слово или конец хода
+    if lobby.words_explained_this_turn >= lobby.words_per_turn:
+        CROCODILE_GUESSING[code] = False
+        await croc_next_turn_network(context, code)
+    else:
+        # Следующее слово того же объясняющего
+        word = lobby.get_next_word()
+        try:
+            keyboard = [
+                [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_correct_{code}")],
+                [InlineKeyboardButton("⏭️ Пропустить слово", callback_data=f"croc_skip_{code}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            remaining = lobby.words_per_turn - lobby.words_explained_this_turn
+            await context.bot.send_message(
+                chat_id=explainer_id,
+                text=(f"🔤 СЛЕДУЮЩЕЕ СЛОВО:\n\n<b>「 {word.upper()} 」</b>\n\n"
+                      f"📝 Слов осталось: {remaining}"),
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки следующего слова: {e}")
+
+async def croc_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пропустить слово (нажал объясняющий)"""
+    query = update.callback_query
+    await query.answer("⏭️ Слово пропущено")
+
+    code = query.data.split("croc_skip_")[1]
+    if code not in CROCODILE_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = CROCODILE_LOBBIES[code]
+    explainer_id = lobby.get_current_explainer_id()
+    skipped_word = lobby.current_word
+    lobby.words_explained_this_turn += 1
+
+    await query.edit_message_text(f"⏭️ Пропущено!\n\nСлово было: <b>{skipped_word}</b>", parse_mode="HTML")
+
+    for player_id in lobby.players:
+        if player_id == explainer_id:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=f"⏭️ Слово пропущено!\n\nСлово было: <b>{skipped_word}</b>",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка уведомления: {e}")
+
+    await asyncio.sleep(1)
+
+    if lobby.words_explained_this_turn >= lobby.words_per_turn:
+        CROCODILE_GUESSING[code] = False
+        await croc_next_turn_network(context, code)
+    else:
+        word = lobby.get_next_word()
+        try:
+            keyboard = [
+                [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_correct_{code}")],
+                [InlineKeyboardButton("⏭️ Пропустить слово", callback_data=f"croc_skip_{code}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            remaining = lobby.words_per_turn - lobby.words_explained_this_turn
+            await context.bot.send_message(
+                chat_id=explainer_id,
+                text=(f"🔤 СЛЕДУЮЩЕЕ СЛОВО:\n\n<b>「 {word.upper()} 」</b>\n\n"
+                      f"📝 Слов осталось: {remaining}"),
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки следующего слова: {e}")
+
+async def croc_next_turn_network(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Переход к следующему игроку (сетевой)"""
+    if code not in CROCODILE_LOBBIES:
+        return
+    lobby = CROCODILE_LOBBIES[code]
+    lobby.next_turn()
+
+    if lobby.is_game_over():
+        await croc_end_game_network(context, code)
+        return
+
+    next_id = lobby.get_current_explainer_id()
+    next_name = lobby.players[next_id].username
+
+    for player_id in lobby.players:
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=f"➡️ Следующий объясняет: <b>{next_name}</b>\n\n{lobby.get_scoreboard()}",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+
+    await asyncio.sleep(3)
+    await croc_start_turn_network(context, code)
+
+async def croc_end_game_network(context: ContextTypes.DEFAULT_TYPE, code: str):
+    """Конец игры крокодил (сетевой)"""
+    if code not in CROCODILE_LOBBIES:
+        return
+    lobby = CROCODILE_LOBBIES[code]
+    CROCODILE_GUESSING.pop(code, None)
+
+    sorted_scores = sorted(lobby.scores.items(), key=lambda x: x[1], reverse=True)
+    winner_id, winner_score = sorted_scores[0]
+    winner_name = lobby.players[winner_id].username
+
+    result_text = f"🎉 ИГРА ОКОНЧЕНА!\n\n🏆 ПОБЕДИТЕЛЬ: {winner_name} ({winner_score} очков)!\n\n"
+    result_text += lobby.get_scoreboard()
+
+    # Статистика
+    for player_id, player in lobby.players.items():
+        if player_id == winner_id:
+            add_win(player_id, player.username)
+        else:
+            add_loss(player_id, player.username)
+
+    for player_id in lobby.players:
+        try:
+            await context.bot.send_message(chat_id=player_id, text=result_text)
+        except Exception as e:
+            logger.error(f"Ошибка отправки результата: {e}")
+
+    del CROCODILE_LOBBIES[code]
+
+# ── Одно устройство ──────────────────────────────────────────────
+
+async def croc_start_single_device(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id: int):
+    """Начало хода (одно устройство)"""
+    if code not in CROCODILE_LOBBIES:
+        return
+    lobby = CROCODILE_LOBBIES[code]
+
+    if lobby.is_game_over():
+        await croc_end_game_single(context, code, chat_id)
+        return
+
+    explainer_id = lobby.get_current_explainer_id()
+    explainer = lobby.players[explainer_id]
+    word = lobby.get_next_word()
+    lobby.words_explained_this_turn = 0
+    lobby.correct_this_turn = 0
+
+    round_info = f"🔄 Раунд {lobby.round_number}/{lobby.max_rounds}"
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_single_correct_{code}")],
+        [InlineKeyboardButton("⏭️ Пропустить", callback_data=f"croc_single_skip_{code}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    sent = await context.bot.send_message(
+        chat_id=chat_id,
+        text=(f"🐊 {round_info}\n\n"
+              f"🎤 Объясняет: <b>{explainer.username}</b>\n"
+              f"📝 Слово {lobby.words_explained_this_turn + 1}/{lobby.words_per_turn}\n\n"
+              f"🔤 СЛОВО:\n\n<b>「 {word.upper()} 」</b>\n\n"
+              f"Объясняй жестами и словами (не называй само слово!)"),
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+    lobby.last_message_id = sent.message_id
+
+async def croc_single_correct(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Угадали слово (одно устройство)"""
+    query = update.callback_query
+    await query.answer("✅ Отлично!")
+
+    code = query.data.split("croc_single_correct_")[1]
+    if code not in CROCODILE_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = CROCODILE_LOBBIES[code]
+    explainer_id = lobby.get_current_explainer_id()
+    lobby.scores[explainer_id] = lobby.scores.get(explainer_id, 0) + 1
+    lobby.words_explained_this_turn += 1
+    lobby.correct_this_turn += 1
+    guessed_word = lobby.current_word
+
+    await query.edit_message_text(
+        f"✅ Угадано!\n\nСлово было: <b>{guessed_word}</b>\n+1 очко!\n\n{lobby.get_scoreboard()}",
+        parse_mode="HTML"
+    )
+    await asyncio.sleep(2)
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    if lobby.words_explained_this_turn >= lobby.words_per_turn:
+        lobby.next_turn()
+        if lobby.is_game_over():
+            await croc_end_game_single(context, code, query.message.chat_id)
+        else:
+            next_id = lobby.get_current_explainer_id()
+            next_name = lobby.players[next_id].username
+            keyboard = [[InlineKeyboardButton("▶️ Следующий игрок", callback_data=f"croc_single_next_{code}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            sent = await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"➡️ Следующий объясняет: <b>{next_name}</b>\n\n{lobby.get_scoreboard()}\n\nПередайте телефон!",
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+            lobby.last_message_id = sent.message_id
+    else:
+        # Следующее слово того же игрока
+        word = lobby.get_next_word()
+        explainer = lobby.players[explainer_id]
+        keyboard = [
+            [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_single_correct_{code}")],
+            [InlineKeyboardButton("⏭️ Пропустить", callback_data=f"croc_single_skip_{code}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        remaining = lobby.words_per_turn - lobby.words_explained_this_turn
+        sent = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=(f"🎤 {explainer.username} — слово {lobby.words_explained_this_turn + 1}/{lobby.words_per_turn}\n\n"
+                  f"🔤 СЛОВО:\n\n<b>「 {word.upper()} 」</b>\n\n📝 Осталось слов: {remaining}"),
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+        lobby.last_message_id = sent.message_id
+
+async def croc_single_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пропустить слово (одно устройство)"""
+    query = update.callback_query
+    await query.answer("⏭️ Пропущено")
+
+    code = query.data.split("croc_single_skip_")[1]
+    if code not in CROCODILE_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = CROCODILE_LOBBIES[code]
+    skipped_word = lobby.current_word
+    explainer_id = lobby.get_current_explainer_id()
+    lobby.words_explained_this_turn += 1
+
+    await query.edit_message_text(
+        f"⏭️ Пропущено!\n\nСлово было: <b>{skipped_word}</b>",
+        parse_mode="HTML"
+    )
+    await asyncio.sleep(1)
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    if lobby.words_explained_this_turn >= lobby.words_per_turn:
+        lobby.next_turn()
+        if lobby.is_game_over():
+            await croc_end_game_single(context, code, query.message.chat_id)
+        else:
+            next_id = lobby.get_current_explainer_id()
+            next_name = lobby.players[next_id].username
+            keyboard = [[InlineKeyboardButton("▶️ Следующий игрок", callback_data=f"croc_single_next_{code}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            sent = await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"➡️ Следующий объясняет: <b>{next_name}</b>\n\n{lobby.get_scoreboard()}\n\nПередайте телефон!",
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+            lobby.last_message_id = sent.message_id
+    else:
+        word = lobby.get_next_word()
+        explainer = lobby.players[explainer_id]
+        keyboard = [
+            [InlineKeyboardButton("✅ Угадали!", callback_data=f"croc_single_correct_{code}")],
+            [InlineKeyboardButton("⏭️ Пропустить", callback_data=f"croc_single_skip_{code}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        sent = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=(f"🎤 {explainer.username} — слово {lobby.words_explained_this_turn + 1}/{lobby.words_per_turn}\n\n"
+                  f"🔤 СЛОВО:\n\n<b>「 {word.upper()} 」</b>"),
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+        lobby.last_message_id = sent.message_id
+
+async def croc_single_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переход к следующему игроку (одно устройство)"""
+    query = update.callback_query
+    await query.answer()
+
+    code = query.data.split("croc_single_next_")[1]
+    if code not in CROCODILE_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    await croc_start_single_device(context, code, query.message.chat_id)
+
+async def croc_end_game_single(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id: int):
+    """Конец игры крокодил (одно устройство)"""
+    if code not in CROCODILE_LOBBIES:
+        return
+    lobby = CROCODILE_LOBBIES[code]
+
+    sorted_scores = sorted(lobby.scores.items(), key=lambda x: x[1], reverse=True)
+    winner_id, winner_score = sorted_scores[0]
+    winner_name = lobby.players[winner_id].username
+
+    result_text = f"🎉 ИГРА ОКОНЧЕНА!\n\n🏆 ПОБЕДИТЕЛЬ: {winner_name} ({winner_score} очков)!\n\n"
+    result_text += lobby.get_scoreboard()
+
+    await context.bot.send_message(chat_id=chat_id, text=result_text)
+    del CROCODILE_LOBBIES[code]
 
 # ============= КОМАНДЫ ШПИОНА (сетевой режим) =============
 
@@ -1935,6 +2687,11 @@ def main():
         app.add_handler(CommandHandler("mafiapl", mafia_players))
         app.add_handler(CommandHandler("leavemafia", leave_mafia))
         app.add_handler(CommandHandler("startmafia", start_mafia_game))
+               
+        # Команды для игры Крокодил
+        app.add_handler(CommandHandler("joincrocodile", join_crocodile))
+        app.add_handler(CommandHandler("startcrocodile", start_crocodile_game))
+
 
         # Обработчик текстовых сообщений
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_player_count_input))
@@ -1944,6 +2701,16 @@ def main():
         app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
         app.add_handler(CallbackQueryHandler(spy_mode_selected, pattern=r"^spy_mode_"))
         app.add_handler(CallbackQueryHandler(mafia_mode_selected, pattern=r"^mafia_mode_"))
+               
+        # Callback handlers - Крокодил
+        app.add_handler(CallbackQueryHandler(croc_difficulty_selected, pattern=r"^croc_diff_"))
+        app.add_handler(CallbackQueryHandler(croc_mode_selected, pattern=r"^croc_mode_"))
+        app.add_handler(CallbackQueryHandler(croc_correct_handler, pattern=r"^croc_correct_"))
+        app.add_handler(CallbackQueryHandler(croc_skip_handler, pattern=r"^croc_skip_"))
+        app.add_handler(CallbackQueryHandler(croc_single_correct, pattern=r"^croc_single_correct_"))
+        app.add_handler(CallbackQueryHandler(croc_single_skip, pattern=r"^croc_single_skip_"))
+        app.add_handler(CallbackQueryHandler(croc_single_next, pattern=r"^croc_single_next_"))
+
 
         # Callback handlers - Шпион одно устройство
         app.add_handler(CallbackQueryHandler(spy_ready_handler, pattern=r"^spy_ready_"))
