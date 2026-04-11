@@ -232,6 +232,7 @@ class Lobby:
         self.roles_assigned = False
         self.player_order = []
         self.last_message_id = None
+        self.lobby_message_ids = {}
 
     def add_player(self, user_id, username):
         if user_id not in self.players:
@@ -310,6 +311,7 @@ class MafiaLobby:
         self.roles_assigned = False
         self.player_order = []
         self.last_message_id = None
+        self.lobby_message_ids = {}
 
     def add_player(self, user_id, username):
         if user_id not in self.players and len(self.players) < 10:
@@ -476,6 +478,7 @@ class CrocodileLobby:
         self.words_explained_this_turn = 0
         self.correct_this_turn = 0
         self.last_message_id = None
+        self.lobby_message_ids = {}
         self.waiting_guess = False  # Для сетевого режима
 
     def add_player(self, user_id, username):
@@ -541,6 +544,28 @@ MAFIA_LOBBIES = {}
 CROCODILE_LOBBIES = {}
 WAITING_PLAYER_COUNT = {}
 CROCODILE_GUESSING = {}  # code -> True, для сетевого режима
+
+async def update_lobby_message(context, player_id, lobby, text):
+    """Удаляет старое сообщение лобби и отправляет новое"""
+    old_msg_id = lobby.lobby_message_ids.get(player_id)
+    if old_msg_id:
+        try:
+            await context.bot.delete_message(
+                chat_id=player_id,
+                message_id=old_msg_id
+            )
+        except Exception:
+            pass
+
+    try:
+        sent = await context.bot.send_message(
+            chat_id=player_id,
+            text=text,
+            parse_mode="HTML"
+        )
+        lobby.lobby_message_ids[player_id] = sent.message_id
+    except Exception as e:
+        logger.error(f"Ошибка обновления сообщения лобби для {player_id}: {e}")
 
 # ============= КОМАНДЫ =============
 
@@ -673,11 +698,18 @@ async def spy_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lobby.add_player(query.from_user.id, query.from_user.username or "Игрок")
         LOBBIES[lobby.code] = lobby
 
-        text = (f"✅ Лобби создано!\n\n📌 Код: <b>{lobby.code}</b>\n"
-                f"🎯 Тема: {theme}\n🌐 Режим: По сети\n👥 Игроков: 1/10\n\n"
-                f"Отправь код друзьям:\n<code>/join {lobby.code}</code>\n\n"
-                f"Запусти игру:\n<code>/startgame {lobby.code}</code>")
+        text = (
+            f"✅ Лобби шпиона\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🎯 Тема: {theme}\n"
+            f"🌐 Режим: По сети\n"
+            f"👥 Игроков: 1/10\n\n"
+            f"📋 Список игроков:\n{lobby.get_players_list()}\n"
+            f"Отправь код друзьям:\n<code>/join {lobby.code}</code>\n\n"
+            f"Запусти игру:\n<code>/startgame {lobby.code}</code>"
+        )
         await query.edit_message_text(text=text, parse_mode="HTML")
+        lobby.lobby_message_ids[query.from_user.id] = query.message.message_id
 
 async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Выбор режима для мафии"""
@@ -704,11 +736,18 @@ async def mafia_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
         lobby.add_player(user_id, username)
         MAFIA_LOBBIES[lobby.code] = lobby
 
-        text = (f"✅ Лобби МАФИИ создано!\n\n📌 Код: <b>{lobby.code}</b>\n"
-                f"🌐 Режим: По сети\n👥 Игроков: 1/10\n\n📍 Минимум 4 игрока\n\n"
-                f"Отправь код друзьям:\n<code>/joinmafia {lobby.code}</code>\n\n"
-                f"Запусти игру:\n<code>/startmafia {lobby.code}</code>")
+        text = (
+            f"✅ Лобби МАФИИ создано!\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🌐 Режим: По сети\n"
+            f"👥 Игроков: 1/10\n\n"
+            f"📋 Список игроков:\n{lobby.get_players_list()}\n"
+            f"📍 Минимум 4 игрока\n\n"
+            f"Отправь код друзьям:\n<code>/joinmafia {lobby.code}</code>\n\n"
+            f"Запусти игру:\n<code>/startmafia {lobby.code}</code>"
+        )
         await query.edit_message_text(text=text, parse_mode="HTML")
+        lobby.lobby_message_ids[user_id] = query.message.message_id
 
 async def handle_player_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка ввода количества игроков"""
@@ -883,7 +922,6 @@ async def croc_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
 
     parts = query.data.split("_")
-    # croc_mode_network_🟢 Легкие  ->  parts: ['croc', 'mode', 'network', '🟢 Легкие']
     mode = parts[2]
     difficulty = "_".join(parts[3:])
 
@@ -905,12 +943,19 @@ async def croc_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
         lobby.add_player(user_id, username)
         CROCODILE_LOBBIES[lobby.code] = lobby
 
-        text = (f"✅ Лобби КРОКОДИЛА создано!\n\n📌 Код: <b>{lobby.code}</b>\n"
-                f"🎯 Сложность: {difficulty}\n🌐 Режим: По сети\n"
-                f"👥 Игроков: 1/10\n\n📍 Минимум 2 игрока\n\n"
-                f"Отправь код друзьям:\n<code>/joincrocodile {lobby.code}</code>\n\n"
-                f"Запусти игру:\n<code>/startcrocodile {lobby.code}</code>")
+        text = (
+            f"✅ Лобби КРОКОДИЛА создано!\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🎯 Сложность: {difficulty}\n"
+            f"🌐 Режим: По сети\n"
+            f"👥 Игроков: 1/10\n\n"
+            f"📋 Список игроков:\n{lobby.get_players_list()}\n"
+            f"📍 Минимум 2 игрока\n\n"
+            f"Отправь код друзьям:\n<code>/joincrocodile {lobby.code}</code>\n\n"
+            f"Запусти игру:\n<code>/startcrocodile {lobby.code}</code>"
+        )
         await query.edit_message_text(text=text, parse_mode="HTML")
+        lobby.lobby_message_ids[user_id] = query.message.message_id
 
 # ── Сетевые команды ──────────────────────────────────────────────
 
@@ -925,6 +970,7 @@ async def join_crocodile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Лобби {code} не найдено.")
         return
     lobby = CROCODILE_LOBBIES[code]
+
     if lobby.single_device:
         await update.message.reply_text("❌ Это лобби для игры с одного устройства.")
         return
@@ -937,9 +983,25 @@ async def join_crocodile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not lobby.add_player(user.id, user.username or "Игрок"):
         await update.message.reply_text("❌ Лобби переполнено.")
         return
-    text = (f"✅ Присоединился к крокодилу!\n\n📌 Код: {code}\n"
-            f"🎯 Сложность: {lobby.difficulty}\n👥 Игроков: {len(lobby.players)}/10")
-    await update.message.reply_text(text)
+
+    def lobby_text():
+        return (
+            f"✅ Лобби крокодила\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🎯 Сложность: {lobby.difficulty}\n"
+            f"🌐 Режим: По сети\n"
+            f"👥 Игроков: {len(lobby.players)}/10\n\n"
+            f"📋 Список игроков:\n{lobby.get_players_list()}\n"
+            f"📍 Минимум 2 игрока\n\n"
+            f"Запусти игру:\n<code>/startcrocodile {code}</code>"
+        )
+
+    sent = await update.message.reply_text(lobby_text(), parse_mode="HTML")
+    lobby.lobby_message_ids[user.id] = sent.message_id
+
+    for player_id in lobby.players:
+        if player_id != user.id:
+            await update_lobby_message(context, player_id, lobby, lobby_text())
 
 async def start_crocodile_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начать игру крокодил (сетевой режим)"""
@@ -1430,9 +1492,26 @@ async def join_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(lobby.players) >= 10:
         await update.message.reply_text("❌ Лобби переполнено.")
         return
+
     lobby.add_player(user.id, user.username or "Игрок")
-    text = f"✅ Присоединился!\n\n📌 Код: {code}\n🎯 Тема: {lobby.theme}\n👥 Игроков: {len(lobby.players)}/10"
-    await update.message.reply_text(text)
+
+    def lobby_text():
+        return (
+            f"✅ Лобби шпиона\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🎯 Тема: {lobby.theme}\n"
+            f"🌐 Режим: По сети\n"
+            f"👥 Игроков: {len(lobby.players)}/10\n\n"
+            f"📋 Список игроков:\n{lobby.get_players_list()}\n"
+            f"Запусти игру:\n<code>/startgame {code}</code>"
+        )
+
+    sent = await update.message.reply_text(lobby_text(), parse_mode="HTML")
+    lobby.lobby_message_ids[user.id] = sent.message_id
+
+    for player_id in lobby.players:
+        if player_id != user.id:
+            await update_lobby_message(context, player_id, lobby, lobby_text())
 
 async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Список игроков в лобби"""
@@ -1794,8 +1873,23 @@ async def join_mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Лобби переполнено.")
         return
 
-    text = f"✅ Присоединился к мафии!\n\n📌 Код: {code}\n👥 Игроков: {len(lobby.players)}/10"
-    await update.message.reply_text(text)
+    def lobby_text():
+        return (
+            f"✅ Лобби мафии\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🌐 Режим: По сети\n"
+            f"👥 Игроков: {len(lobby.players)}/10\n\n"
+            f"📋 Список игроков:\n{lobby.get_players_list()}\n"
+            f"📍 Минимум 4 игрока\n\n"
+            f"Запусти игру:\n<code>/startmafia {code}</code>"
+        )
+
+    sent = await update.message.reply_text(lobby_text(), parse_mode="HTML")
+    lobby.lobby_message_ids[user.id] = sent.message_id
+
+    for player_id in lobby.players:
+        if player_id != user.id:
+            await update_lobby_message(context, player_id, lobby, lobby_text())
 
 async def mafia_players(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Список игроков мафии"""
