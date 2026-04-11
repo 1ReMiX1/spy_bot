@@ -1434,8 +1434,10 @@ async def tod_end_game_network(context: ContextTypes.DEFAULT_TYPE, code: str):
     result_text = "🎭 ИГРА «ПРАВДА ИЛИ ДЕЙСТВИЕ» ОКОНЧЕНА!\n\nСпасибо всем за игру! 🎉"
     for player_id in lobby.players:
         try:
-            await context.bot.send_message(chat_id=player_id, text=result_text
-
+            await context.bot.send_message(chat_id=player_id, text=result_text)
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+    TOD_LOBBIES.pop(code, None)
 # ============= КРОКОДИЛ - ВСЕ ФУНКЦИИ =============
 
 async def croc_difficulty_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
