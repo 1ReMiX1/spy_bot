@@ -457,6 +457,77 @@ class MafiaLobby:
         if alive_mafia >= alive_civilians:
             return "mafia"
         return None
+
+class TODLobby:
+    def __init__(self, host_id, mode, single_device=False):
+        self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.host_id = host_id
+        self.mode = mode
+        self.single_device = single_device
+        self.players = {}
+        self.player_order = []
+        self.current_player_index = 0
+        self.started = False
+        self.round_number = 1
+        self.max_rounds = 5
+        self.rounds_completed = 0
+        self.last_message_id = None
+        self.lobby_message_ids = {}
+        self.used_truths = set()
+        self.used_dares = set()
+
+    def add_player(self, user_id, username):
+        if user_id not in self.players and len(self.players) < 15:
+            self.players[user_id] = Player(user_id, username)
+            return True
+        return False
+
+    def remove_player(self, user_id):
+        if user_id in self.players:
+            self.players.pop(user_id)
+            return True
+        return False
+
+    def get_current_player_id(self):
+        if not self.player_order:
+            return None
+        return self.player_order[self.current_player_index % len(self.player_order)]
+
+    def get_random_truth(self):
+        questions = TOD_QUESTIONS[self.mode]["truth"]
+        available = [q for q in questions if q not in self.used_truths]
+        if not available:
+            self.used_truths.clear()
+            available = questions
+        q = random.choice(available)
+        self.used_truths.add(q)
+        return q
+
+    def get_random_dare(self):
+        dares = TOD_QUESTIONS[self.mode]["dare"]
+        available = [d for d in dares if d not in self.used_dares]
+        if not available:
+            self.used_dares.clear()
+            available = dares
+        d = random.choice(available)
+        self.used_dares.add(d)
+        return d
+
+    def next_turn(self):
+        self.current_player_index += 1
+        if self.current_player_index % len(self.player_order) == 0:
+            self.round_number += 1
+        self.rounds_completed += 1
+
+    def is_game_over(self):
+        return self.round_number > self.max_rounds
+
+    def get_players_list(self):
+        text = ""
+        for i, (uid, player) in enumerate(self.players.items(), 1):
+            text += f"{i}. {player.username}\n"
+        return text
+
 # ============= КРОКОДИЛ - КЛАСС =============
 
 class CrocodileLobby:
@@ -544,6 +615,91 @@ MAFIA_LOBBIES = {}
 CROCODILE_LOBBIES = {}
 WAITING_PLAYER_COUNT = {}
 CROCODILE_GUESSING = {}  # code -> True, для сетевого режима
+TOD_LOBBIES = {}
+
+TOD_QUESTIONS = {
+    "normal": {
+        "truth": [
+            "Какой твой самый большой страх?",
+            "Что ты никогда не расскажешь родителям?",
+            "Какая твоя самая глупая покупка?",
+            "Кого из присутствующих ты считаешь самым странным?",
+            "Что тебя больше всего раздражает в людях?",
+            "Какой твой самый неловкий момент в жизни?",
+            "Если бы ты мог стать кем-то из присутствующих на день, кем бы ты стал?",
+            "Какую ложь ты говоришь чаще всего?",
+            "Что ты делаешь, когда думаешь, что за тобой никто не наблюдает?",
+            "Какой твой самый стыдный музыкальный вкус?",
+            "Во сколько лет ты впервые влюбился?",
+            "Какой подарок ты делал вид, что тебе понравился, хотя на самом деле нет?",
+            "Что ты никогда не простишь человеку?",
+            "Какую знаменитость ты тайно обожаешь?",
+            "Признайся в чём-то, за что тебе до сих пор стыдно.",
+            "Какая твоя самая дурацкая суеверие или примета?",
+            "Что ты делал в детстве и о чём сейчас жалеешь?",
+            "Кому из присутствующих ты бы доверил хранить свои секреты?",
+            "Какой твой тайный талант?",
+            "Сколько денег ты тратишь на себя в месяц?",
+            "Что бы ты сделал с миллионом рублей прямо сейчас?",
+            "Кого из присутствующих ты бы взял с собой в путешествие?",
+            "Что тебе снилось последний раз?",
+            "Есть ли у тебя привычка, которой ты стыдишься?",
+            "Какую профессию ты бы выбрал, если бы не было денежных ограничений?",
+            "Что ты ненавидишь, но всё равно делаешь?",
+            "Кого из присутствующих ты считаешь умнее всех?",
+            "В чём ты притворяешься лучше, чем есть на самом деле?",
+            "Что бы ты изменил в своей внешности, если бы мог?",
+            "Какой твой самый бесполезный навык?",
+        ],
+        "dare": [
+            "Говори только вопросами следующие 3 минуты.",
+            "Напиши комплимент каждому игроку.",
+            "Изобрази любое животное — остальные угадывают.",
+            "Спой куплет любой песни.",
+            "Сделай 20 приседаний прямо сейчас.",
+            "Позвони кому-нибудь и скажи, что скучаешь по нему.",
+            "Говори с акцентом следующие 5 минут.",
+            "Напиши смешное сообщение в любой чат.",
+            "Сделай странное лицо и держи его 30 секунд.",
+            "Расскажи анекдот — если не смешной, делаешь ещё одно задание.",
+            "Попробуй облизать локоть.",
+            "Станцуй 1 минуту без музыки.",
+            "Изобрази знаменитого человека — остальные угадывают.",
+            "Скажи тост за каждого игрока.",
+            "Сделай стойку у стены на 30 секунд.",
+            "Напой мелодию — остальные угадывают песню.",
+            "Назови 5 достоинств игрока справа от тебя.",
+            "Произнеси алфавит наоборот.",
+            "Сделай фото с самым нелепым выражением лица.",
+            "Изобрази робота следующие 2 минуты.",
+            "Напиши статус в соцсети: «Я лучший/лучшая!»",
+            "Повтори за ведущим любую фразу с закрытым ртом.",
+            "Говори «Эм» перед каждым словом следующие 2 минуты.",
+            "Изобрази сцену из любого фильма.",
+            "Подержи кубик льда в руке 30 секунд.",
+            "Перечисли 10 стран за 15 секунд.",
+            "Сделай комплимент самому себе вслух.",
+            "Позвони маме и скажи что-нибудь смешное.",
+            "Изобрази учителя, который объясняет урок.",
+            "Попробуй сказать скороговорку 3 раза подряд быстро.",
+        ],
+    },
+    "18plus": {
+        "truth": [
+            "Каким был твой первый поцелуй и с кем?",
+            "Какой твой самый смелый поступок на вечеринке?",
+            "Есть ли среди присутствующих тот, кто тебе нравится?",
+            "С кем из знаменитостей ты бы провёл ночь?",
+            "Какой твой самый безумный флирт?",
+            "Признайся в самом диком поступке под воздействием алкоголя.",
+            "Кому из присутствующих ты бы написал первым в 2 ночи?",
+            "Сколько человек тебя целовало?",
+            "Что ты считаешь идеальным свиданием?",
+            "Опиши свой идеальный тип партнёра.",
+            "Какой твой самый страстный поцелуй и где это было?",
+            "Есть ли у тебя запасной человек на крайний случай?",
+            "Что самое смелое ты когда-либо писал в переписке?",
+            "Признайся:
 
 async def update_lobby_message(context, player_id, lobby, text):
     """Удаляет старое сообщение лобби и отправляет новое"""
@@ -575,6 +731,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🕵️ ШПИОН", callback_data="game_spy")],
         [InlineKeyboardButton("🔪 МАФИЯ", callback_data="game_mafia")],
         [InlineKeyboardButton("🐊 КРОКОДИЛ", callback_data="game_crocodile")],
+        [InlineKeyboardButton("🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ", callback_data="game_tod")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "👋 Добро пожаловать в GameDAG!\n\nВыбери игру:"
@@ -649,6 +806,10 @@ async def game_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("🔪 МАФИЯ - Выберите режим:", reply_markup=reply_markup)
+
+    elif game == "tod":
+        await tod_mode_selected(update, context)
+        return
 
     elif game == "crocodile":
         keyboard = [
@@ -898,6 +1059,331 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
         )
         await asyncio.sleep(2)
         await croc_start_single_device(context, lobby.code, chat_id)
+
+# ============= ПРАВДА ИЛИ ДЕЙСТВИЕ - ФУНКЦИИ =============
+
+async def tod_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    keyboard = [
+        [InlineKeyboardButton("😊 Обычный режим", callback_data="tod_rating_normal")],
+        [InlineKeyboardButton("🔞 Режим 18+", callback_data="tod_rating_18plus")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ\n\nВыберите режим игры:\n\n"
+        "😊 Обычный — весёлые вопросы для любой компании\n"
+        "🔞 18+ — более смелые вопросы для взрослых",
+        reply_markup=reply_markup
+    )
+
+async def tod_rating_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    rating = query.data.split("tod_rating_")[1]
+    rating_label = "😊 Обычный" if rating == "normal" else "🔞 18+"
+    keyboard = [
+        [InlineKeyboardButton("🌐 Игра по сети", callback_data=f"tod_device_network_{rating}")],
+        [InlineKeyboardButton("📱 С одного устройства", callback_data=f"tod_device_single_{rating}")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ\n🎮 Режим: {rating_label}\n\nВыберите тип игры:",
+        reply_markup=reply_markup
+    )
+
+async def tod_device_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split("_")
+    device = parts[2]
+    rating = parts[3]
+    user_id = query.from_user.id
+    username = query.from_user.username or "Игрок"
+    rating_label = "😊 Обычный" if rating == "normal" else "🔞 18+"
+
+    if device == "single":
+        WAITING_PLAYER_COUNT[user_id] = {
+            "type": "tod",
+            "mode": rating,
+            "chat_id": query.message.chat_id
+        }
+        await query.edit_message_text(
+            f"🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ\n"
+            f"🎮 Режим: {rating_label}\n"
+            f"📱 Тип: С одного устройства\n\n"
+            f"Введите количество игроков (от 2 до 15):"
+        )
+    else:
+        lobby = TODLobby(host_id=user_id, mode=rating, single_device=False)
+        lobby.add_player(user_id, username)
+        TOD_LOBBIES[lobby.code] = lobby
+        text = (
+            f"✅ Лобби «Правда или Действие» создано!\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🎮 Режим: {rating_label}\n"
+            f"🌐 Тип: По сети\n"
+            f"👥 Игроков: 1/15\n\n"
+            f"📋 Игроки:\n{lobby.get_players_list()}\n"
+            f"📍 Минимум 2 игрока\n\n"
+            f"Отправь код друзьям:\n<code>/jointod {lobby.code}</code>\n\n"
+            f"Запусти игру:\n<code>/starttod {lobby.code}</code>"
+        )
+        await query.edit_message_text(text=text, parse_mode="HTML")
+        lobby.lobby_message_ids[user_id] = query.message.message_id
+
+async def join_tod(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if len(context.args) != 1:
+        await update.message.reply_text("❌ Использование: /jointod <код>")
+        return
+    code = context.args[0].upper()
+    if code not in TOD_LOBBIES:
+        await update.message.reply_text(f"❌ Лобби {code} не найдено.")
+        return
+    lobby = TOD_LOBBIES[code]
+    if lobby.single_device:
+        await update.message.reply_text("❌ Это лобби для одного устройства.")
+        return
+    if lobby.started:
+        await update.message.reply_text("❌ Игра уже началась.")
+        return
+    if user.id in lobby.players:
+        await update.message.reply_text("❌ Ты уже в лобби.")
+        return
+    if not lobby.add_player(user.id, user.username or "Игрок"):
+        await update.message.reply_text("❌ Лобби переполнено.")
+        return
+    rating_label = "😊 Обычный" if lobby.mode == "normal" else "🔞 18+"
+
+    def lobby_text():
+        return (
+            f"✅ Лобби «Правда или Действие»\n\n"
+            f"📌 Код: <b>{lobby.code}</b>\n"
+            f"🎮 Режим: {rating_label}\n"
+            f"🌐 Тип: По сети\n"
+            f"👥 Игроков: {len(lobby.players)}/15\n\n"
+            f"📋 Игроки:\n{lobby.get_players_list()}\n"
+            f"Запусти игру:\n<code>/starttod {code}</code>"
+        )
+
+    sent = await update.message.reply_text(lobby_text(), parse_mode="HTML")
+    lobby.lobby_message_ids[user.id] = sent.message_id
+    for player_id in lobby.players:
+        if player_id != user.id:
+            await update_lobby_message(context, player_id, lobby, lobby_text())
+
+async def start_tod_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if len(context.args) != 1:
+        await update.message.reply_text("❌ Использование: /starttod <код>")
+        return
+    code = context.args[0].upper()
+    if code not in TOD_LOBBIES:
+        await update.message.reply_text("❌ Лобби не найдено.")
+        return
+    lobby = TOD_LOBBIES[code]
+    if lobby.host_id != user.id:
+        await update.message.reply_text("❌ Только хост может начать.")
+        return
+    if lobby.started:
+        await update.message.reply_text("❌ Игра уже запущена.")
+        return
+    if len(lobby.players) < 2:
+        await update.message.reply_text("❌ Минимум 2 игрока.")
+        return
+
+    lobby.started = True
+    lobby.player_order = list(lobby.players.keys())
+    random.shuffle(lobby.player_order)
+    rating_label = "😊 Обычный" if lobby.mode == "normal" else "🔞 18+"
+
+    for player_id in lobby.players:
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=(
+                    f"🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ НАЧАЛАСЬ!\n\n"
+                    f"🎮 Режим: {rating_label}\n"
+                    f"🔄 Раундов: {lobby.max_rounds}\n\n"
+                    f"По очереди каждый выбирает:\n"
+                    f"🤔 ПРАВДА — ответь честно на вопрос\n"
+                    f"💪 ДЕЙСТВИЕ — выполни задание\n\n"
+                    f"Когда придёт твоя очередь — получишь уведомление!"
+                )
+            )
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+
+    await update.message.reply_text("✅ ИГРА НАЧАЛАСЬ!")
+    await asyncio.sleep(2)
+    await tod_start_turn_network(context, code)
+
+async def tod_start_turn_network(context: ContextTypes.DEFAULT_TYPE, code: str):
+    if code not in TOD_LOBBIES:
+        return
+    lobby = TOD_LOBBIES[code]
+    if lobby.is_game_over():
+        await tod_end_game_network(context, code)
+        return
+
+    current_id = lobby.get_current_player_id()
+    current_player = lobby.players[current_id]
+    round_info = f"🔄 Раунд {lobby.round_number}/{lobby.max_rounds}"
+
+    for player_id in lobby.players:
+        if player_id != current_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=player_id,
+                    text=f"🎭 {round_info}\n\n👤 Ход: <b>{current_player.username}</b>\n\nЖдём его выбора...",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка: {e}")
+
+    keyboard = [
+        [InlineKeyboardButton("🤔 ПРАВДА", callback_data=f"tod_choose_truth_{code}")],
+        [InlineKeyboardButton("💪 ДЕЙСТВИЕ", callback_data=f"tod_choose_dare_{code}")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    try:
+        await context.bot.send_message(
+            chat_id=current_id,
+            text=f"🎭 ТВОЙ ХОД!\n\n{round_info}\n\nВыбирай:",
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка: {e}")
+
+async def tod_choose_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split("_")
+    choice = parts[2]
+    code = parts[3]
+
+    if code not in TOD_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = TOD_LOBBIES[code]
+    current_id = lobby.get_current_player_id()
+
+    if query.from_user.id != current_id:
+        await query.answer("❌ Сейчас не твой ход!", show_alert=True)
+        return
+
+    if choice == "truth":
+        content = lobby.get_random_truth()
+        emoji = "🤔"
+        label = "ПРАВДА"
+        prefix = "❓"
+    else:
+        content = lobby.get_random_dare()
+        emoji = "💪"
+        label = "ДЕЙСТВИЕ"
+        prefix = "🎯"
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Выполнено / Ответил", callback_data=f"tod_done_{code}")],
+        [InlineKeyboardButton("❌ Отказываюсь (пропуск)", callback_data=f"tod_skip_{code}")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"{emoji} <b>{label}!</b>\n\n{prefix} <b>{content}</b>\n\nВыполни и нажми «Выполнено»!",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+    for player_id in lobby.players:
+        if player_id != current_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=player_id,
+                    text=f"{emoji} <b>{lobby.players[current_id].username}</b> выбрал(а): <b>{label}</b>\n\n{prefix} {content}",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка: {e}")
+
+async def tod_done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("✅ Отлично!")
+    code = query.data.split("tod_done_")[1]
+    if code not in TOD_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+    lobby = TOD_LOBBIES[code]
+    current_id = lobby.get_current_player_id()
+    if query.from_user.id != current_id:
+        await query.answer("❌ Не твой ход!", show_alert=True)
+        return
+
+    player_name = lobby.players[current_id].username
+    await query.edit_message_text(f"✅ {player_name} выполнил(а)!")
+
+    for player_id in lobby.players:
+        if player_id != current_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=player_id,
+                    text=f"✅ <b>{player_name}</b> выполнил(а) задание!",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка: {e}")
+
+    await asyncio.sleep(2)
+    lobby.next_turn()
+    if lobby.is_game_over():
+        await tod_end_game_network(context, code)
+    else:
+        await tod_start_turn_network(context, code)
+
+async def tod_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("❌ Пропущено")
+    code = query.data.split("tod_skip_")[1]
+    if code not in TOD_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+    lobby = TOD_LOBBIES[code]
+    current_id = lobby.get_current_player_id()
+    if query.from_user.id != current_id:
+        await query.answer("❌ Не твой ход!", show_alert=True)
+        return
+
+    player_name = lobby.players[current_id].username
+    await query.edit_message_text(f"❌ {player_name} отказался(ась)!")
+
+    for player_id in lobby.players:
+        if player_id != current_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=player_id,
+                    text=f"❌ <b>{player_name}</b> отказался(ась) выполнять!",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка: {e}")
+
+    await asyncio.sleep(2)
+    lobby.next_turn()
+    if lobby.is_game_over():
+        await tod_end_game_network(context, code)
+    else:
+        await tod_start_turn_network(context, code)
+
+async def tod_end_game_network(context: ContextTypes.DEFAULT_TYPE, code: str):
+    if code not in TOD_LOBBIES:
+        return
+    lobby = TOD_LOBBIES[code]
+    result_text = "🎭 ИГРА «ПРАВДА ИЛИ ДЕЙСТВИЕ» ОКОНЧЕНА!\n\nСпасибо всем за игру! 🎉"
+    for player_id in lobby.players:
+        try:
+            await context.bot.send_message(chat_id=player_id, text=result_text
 
 # ============= КРОКОДИЛ - ВСЕ ФУНКЦИИ =============
 
@@ -2794,6 +3280,8 @@ def main():
         app.add_handler(CommandHandler("joincrocodile", join_crocodile))
         app.add_handler(CommandHandler("startcrocodile", start_crocodile_game))
 
+        app.add_handler(CommandHandler("jointod", join_tod))
+        app.add_handler(CommandHandler("starttod", start_tod_game))
 
         # Обработчик текстовых сообщений
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_player_count_input))
@@ -2803,6 +3291,12 @@ def main():
         app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
         app.add_handler(CallbackQueryHandler(spy_mode_selected, pattern=r"^spy_mode_"))
         app.add_handler(CallbackQueryHandler(mafia_mode_selected, pattern=r"^mafia_mode_"))
+
+        app.add_handler(CallbackQueryHandler(tod_rating_selected, pattern=r"^tod_rating_"))
+        app.add_handler(CallbackQueryHandler(tod_device_selected, pattern=r"^tod_device_"))
+        app.add_handler(CallbackQueryHandler(tod_choose_handler, pattern=r"^tod_choose_"))
+        app.add_handler(CallbackQueryHandler(tod_done_handler, pattern=r"^tod_done_"))
+        app.add_handler(CallbackQueryHandler(tod_skip_handler, pattern=r"^tod_skip_"))
                
         # Callback handlers - Крокодил
         app.add_handler(CallbackQueryHandler(croc_difficulty_selected, pattern=r"^croc_diff_"))
