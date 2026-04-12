@@ -1128,6 +1128,7 @@ async def tod_mode_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
+
 async def tod_rating_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1142,6 +1143,7 @@ async def tod_rating_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ\n🎮 Режим: {rating_label}\n\nВыберите тип игры:",
         reply_markup=reply_markup
     )
+
 
 async def tod_device_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1183,6 +1185,7 @@ async def tod_device_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=text, parse_mode="HTML")
         lobby.lobby_message_ids[user_id] = query.message.message_id
 
+
 async def join_tod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if len(context.args) != 1:
@@ -1223,6 +1226,7 @@ async def join_tod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for player_id in lobby.players:
         if player_id != user.id:
             await update_lobby_message(context, player_id, lobby, lobby_text())
+
 
 async def start_tod_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1270,6 +1274,7 @@ async def start_tod_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(2)
     await tod_start_turn_network(context, code)
 
+
 async def tod_start_turn_network(context: ContextTypes.DEFAULT_TYPE, code: str):
     if code not in TOD_LOBBIES:
         return
@@ -1307,6 +1312,7 @@ async def tod_start_turn_network(context: ContextTypes.DEFAULT_TYPE, code: str):
         )
     except Exception as e:
         logger.error(f"Ошибка: {e}")
+
 
 async def tod_choose_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1359,6 +1365,7 @@ async def tod_choose_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except Exception as e:
                 logger.error(f"Ошибка: {e}")
 
+
 async def tod_done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("✅ Отлично!")
@@ -1392,6 +1399,7 @@ async def tod_done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await tod_end_game_network(context, code)
     else:
         await tod_start_turn_network(context, code)
+
 
 async def tod_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1427,6 +1435,7 @@ async def tod_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await tod_start_turn_network(context, code)
 
+
 async def tod_end_game_network(context: ContextTypes.DEFAULT_TYPE, code: str):
     if code not in TOD_LOBBIES:
         return
@@ -1438,6 +1447,27 @@ async def tod_end_game_network(context: ContextTypes.DEFAULT_TYPE, code: str):
         except Exception as e:
             logger.error(f"Ошибка: {e}")
     TOD_LOBBIES.pop(code, None)
+
+
+async def update_lobby_message(context, player_id, lobby, text):
+    old_msg_id = lobby.lobby_message_ids.get(player_id)
+    if old_msg_id:
+        try:
+            await context.bot.delete_message(
+                chat_id=player_id,
+                message_id=old_msg_id
+            )
+        except Exception:
+            pass
+    try:
+        sent = await context.bot.send_message(
+            chat_id=player_id,
+            text=text,
+            parse_mode="HTML"
+        )
+        lobby.lobby_message_ids[player_id] = sent.message_id
+    except Exception as e:
+        logger.error(f"Ошибка update_lobby_message: {e}")
 # ============= КРОКОДИЛ - ВСЕ ФУНКЦИИ =============
 
 async def croc_difficulty_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
