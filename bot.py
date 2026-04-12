@@ -1449,6 +1449,144 @@ async def tod_end_game_network(context: ContextTypes.DEFAULT_TYPE, code: str):
     TOD_LOBBIES.pop(code, None)
 
 
+# ===== TOD ОДНО УСТРОЙСТВО =====
+
+async def tod_start_turn_single(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id: int):
+    if code not in TOD_LOBBIES:
+        return
+    lobby = TOD_LOBBIES[code]
+
+    if lobby.is_game_over():
+        await tod_end_game_single(context, code, chat_id)
+        return
+
+    current_id = lobby.get_current_player_id()
+    current_player = lobby.players[current_id]
+    round_info = f"🔄 Раунд {lobby.round_number}/{lobby.max_rounds}"
+
+    keyboard = [
+        [InlineKeyboardButton("🤔 ПРАВДА", callback_data=f"tod_single_truth_{code}")],
+        [InlineKeyboardButton("💪 ДЕЙСТВИЕ", callback_data=f"tod_single_dare_{code}")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"🎭 ХОД ИГРОКА\n\n"
+            f"{round_info}\n"
+            f"👤 Сейчас ходит: <b>{current_player.username}</b>\n\n"
+            f"Передайте телефон <b>{current_player.username}</b>!\n\n"
+            f"Выбирай:"
+        ),
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+
+async def tod_single_choose_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data.startswith("tod_single_truth_"):
+        choice = "truth"
+        code = data.split("tod_single_truth_")[1]
+    elif data.startswith("tod_single_dare_"):
+        choice = "dare"
+        code = data.split("tod_single_dare_")[1]
+    else:
+        return
+
+    if code not in TOD_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = TOD_LOBBIES[code]
+    current_id = lobby.get_current_player_id()
+    current_player = lobby.players[current_id]
+
+    if choice == "truth":
+        content = lobby.get_random_truth()
+        emoji = "🤔"
+        label = "ПРАВДА"
+        prefix = "❓"
+    else:
+        content = lobby.get_random_dare()
+        emoji = "💪"
+        label = "ДЕЙСТВИЕ"
+        prefix = "🎯"
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Выполнено / Ответил", callback_data=f"tod_single_done_{code}")],
+        [InlineKeyboardButton("❌ Отказываюсь (пропуск)", callback_data=f"tod_single_skip_{code}")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"{emoji} <b>{current_player.username}</b> выбрал(а): <b>{label}</b>\n\n"
+        f"{prefix} <b>{content}</b>\n\n"
+        f"Выполни и нажми кнопку!",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+
+async def tod_single_done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("✅ Отлично!")
+    code = query.data.split("tod_single_done_")[1]
+
+    if code not in TOD_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = TOD_LOBBIES[code]
+    current_id = lobby.get_current_player_id()
+    player_name = lobby.players[current_id].username
+    chat_id = query.message.chat_id
+
+    await query.edit_message_text(f"✅ <b>{player_name}</b> выполнил(а)!", parse_mode="HTML")
+    await asyncio.sleep(2)
+    lobby.next_turn()
+
+    if lobby.is_game_over():
+        await tod_end_game_single(context, code, chat_id)
+    else:
+        await tod_start_turn_single(context, code, chat_id)
+
+
+async def tod_single_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("❌ Пропущено")
+    code = query.data.split("tod_single_skip_")[1]
+
+    if code not in TOD_LOBBIES:
+        await query.edit_message_text("❌ Игра не найдена.")
+        return
+
+    lobby = TOD_LOBBIES[code]
+    current_id = lobby.get_current_player_id()
+    player_name = lobby.players[current_id].username
+    chat_id = query.message.chat_id
+
+    await query.edit_message_text(f"❌ <b>{player_name}</b> отказался(ась)!", parse_mode="HTML")
+    await asyncio.sleep(2)
+    lobby.next_turn()
+
+    if lobby.is_game_over():
+        await tod_end_game_single(context, code, chat_id)
+    else:
+        await tod_start_turn_single(context, code, chat_id)
+
+
+async def tod_end_game_single(context: ContextTypes.DEFAULT_TYPE, code: str, chat_id: int):
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="🎭 ИГРА «ПРАВДА ИЛИ ДЕЙСТВИЕ» ОКОНЧЕНА!\n\nСпасибо всем за игру! 🎉"
+    )
+    TOD_LOBBIES.pop(code, None)
+
+
 async def update_lobby_message(context, player_id, lobby, text):
     old_msg_id = lobby.lobby_message_ids.get(player_id)
     if old_msg_id:
