@@ -3330,15 +3330,12 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 # ============= MAIN =============
 
 def main():
-    """Основная функция запуска бота"""
     try:
-        # Инициализация БД
         init_db()
         logger.info("=" * 50)
         logger.info("✅ Бот запущен!")
         logger.info("=" * 50)
 
-        # Создание приложения
         app = ApplicationBuilder().token(BOT_TOKEN).build()
 
         # Основные команды
@@ -3347,41 +3344,47 @@ def main():
         app.add_handler(CommandHandler("stats", stats_command))
         app.add_handler(CommandHandler("top", top_command))
 
-        # Команды для игры Шпион
+        # Шпион
         app.add_handler(CommandHandler("join", join_lobby))
         app.add_handler(CommandHandler("players", players_command))
         app.add_handler(CommandHandler("leave", leave_lobby))
         app.add_handler(CommandHandler("startgame", start_game))
 
-        # Команды для игры Мафия
+        # Мафия
         app.add_handler(CommandHandler("joinmafia", join_mafia))
         app.add_handler(CommandHandler("mafiapl", mafia_players))
         app.add_handler(CommandHandler("leavemafia", leave_mafia))
         app.add_handler(CommandHandler("startmafia", start_mafia_game))
-               
-        # Команды для игры Крокодил
+
+        # Крокодил
         app.add_handler(CommandHandler("joincrocodile", join_crocodile))
         app.add_handler(CommandHandler("startcrocodile", start_crocodile_game))
 
+        # Правда или Действие
         app.add_handler(CommandHandler("jointod", join_tod))
         app.add_handler(CommandHandler("starttod", start_tod_game))
 
-        # Обработчик текстовых сообщений
+        # Текстовые сообщения
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_player_count_input))
 
-        # Callback handlers - основные
+        # Callback - основные
         app.add_handler(CallbackQueryHandler(game_choice, pattern=r"^game_"))
         app.add_handler(CallbackQueryHandler(theme_selected, pattern=r"^theme_"))
         app.add_handler(CallbackQueryHandler(spy_mode_selected, pattern=r"^spy_mode_"))
         app.add_handler(CallbackQueryHandler(mafia_mode_selected, pattern=r"^mafia_mode_"))
 
+        # Callback - TOD
+        app.add_handler(CallbackQueryHandler(tod_mode_selected, pattern=r"^tod_mode$"))
         app.add_handler(CallbackQueryHandler(tod_rating_selected, pattern=r"^tod_rating_"))
         app.add_handler(CallbackQueryHandler(tod_device_selected, pattern=r"^tod_device_"))
         app.add_handler(CallbackQueryHandler(tod_choose_handler, pattern=r"^tod_choose_"))
         app.add_handler(CallbackQueryHandler(tod_done_handler, pattern=r"^tod_done_"))
         app.add_handler(CallbackQueryHandler(tod_skip_handler, pattern=r"^tod_skip_"))
-               
-        # Callback handlers - Крокодил
+        app.add_handler(CallbackQueryHandler(tod_single_choose_handler, pattern=r"^tod_single_(truth|dare)_"))
+        app.add_handler(CallbackQueryHandler(tod_single_done_handler, pattern=r"^tod_single_done_"))
+        app.add_handler(CallbackQueryHandler(tod_single_skip_handler, pattern=r"^tod_single_skip_"))
+
+        # Callback - Крокодил
         app.add_handler(CallbackQueryHandler(croc_difficulty_selected, pattern=r"^croc_diff_"))
         app.add_handler(CallbackQueryHandler(croc_mode_selected, pattern=r"^croc_mode_"))
         app.add_handler(CallbackQueryHandler(croc_correct_handler, pattern=r"^croc_correct_"))
@@ -3390,13 +3393,12 @@ def main():
         app.add_handler(CallbackQueryHandler(croc_single_skip, pattern=r"^croc_single_skip_"))
         app.add_handler(CallbackQueryHandler(croc_single_next, pattern=r"^croc_single_next_"))
 
-
-        # Callback handlers - Шпион одно устройство
+        # Callback - Шпион одно устройство
         app.add_handler(CallbackQueryHandler(spy_ready_handler, pattern=r"^spy_ready_"))
         app.add_handler(CallbackQueryHandler(spy_next_handler, pattern=r"^spy_next_"))
         app.add_handler(CallbackQueryHandler(spy_vote_start_handler, pattern=r"^spy_vote_start_"))
 
-        # Callback handlers - Мафия одно устройство
+        # Callback - Мафия одно устройство
         app.add_handler(CallbackQueryHandler(mafia_ready_handler, pattern=r"^mafia_ready_"))
         app.add_handler(CallbackQueryHandler(mafia_next_handler, pattern=r"^mafia_next_"))
         app.add_handler(CallbackQueryHandler(mafia_night_action_single, pattern=r"^mafia_(kill|heal|check)_single_"))
@@ -3404,7 +3406,7 @@ def main():
         app.add_handler(CallbackQueryHandler(mafia_confirm_vote_single, pattern=r"^mafia_confirm_single_"))
         app.add_handler(CallbackQueryHandler(mafia_revote_single, pattern=r"^mafia_revote_single_"))
 
-        # Callback handlers - голосование и действия
+        # Callback - голосование сетевой режим
         app.add_handler(CallbackQueryHandler(vote_handler, pattern=r"^vote_"))
         app.add_handler(CallbackQueryHandler(mafia_night_action, pattern=r"^mafia_(kill|heal|check)_"))
         app.add_handler(CallbackQueryHandler(mafia_day_vote, pattern=r"^mafia_vote_"))
@@ -3412,7 +3414,6 @@ def main():
         # Обработчик ошибок
         app.add_error_handler(error_handler)
 
-        # Запуск бота
         logger.info("🤖 Бот начинает получать обновления...")
         app.run_polling(allowed_updates=Update.ALL_TYPES)
 
