@@ -1110,6 +1110,38 @@ async def handle_player_count_input(update: Update, context: ContextTypes.DEFAUL
         )
         await asyncio.sleep(2)
         await croc_start_single_device(context, lobby.code, chat_id)
+           
+    elif game_type == "tod":
+        if count < 2 or count > 15:
+            await update.message.reply_text("❌ Количество игроков: от 2 до 15. Попробуйте снова:")
+            return
+
+        del WAITING_PLAYER_COUNT[user_id]
+
+        mode = state["mode"]
+        chat_id = state["chat_id"]
+        rating_label = "😊 Обычный" if mode == "normal" else "🔞 18+"
+
+        lobby = TODLobby(host_id=user_id, mode=mode, single_device=True)
+
+        for i in range(1, count + 1):
+            fake_id = user_id * 1000 + i
+            lobby.add_player(fake_id, f"Игрок {i}")
+
+        TOD_LOBBIES[lobby.code] = lobby
+        lobby.started = True
+        lobby.player_order = list(lobby.players.keys())
+        random.shuffle(lobby.player_order)
+
+        await update.message.reply_text(
+            f"🎭 ПРАВДА ИЛИ ДЕЙСТВИЕ НАЧАЛАСЬ!\n\n"
+            f"🎮 Режим: {rating_label}\n"
+            f"👥 Игроков: {count}\n"
+            f"🔄 Раундов: {lobby.max_rounds}\n\n"
+            f"По очереди каждый выбирает ПРАВДУ или ДЕЙСТВИЕ!"
+        )
+        await asyncio.sleep(2)
+        await tod_start_turn_single(context, lobby.code, chat_id)
 
 # ============= ПРАВДА ИЛИ ДЕЙСТВИЕ - ФУНКЦИИ =============
 
