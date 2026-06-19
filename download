@@ -1,0 +1,4 @@
+# Этот файл ТОЛЬКО для локального запуска. В GitHub он НЕ попадает (см. .gitignore).
+# ПОСЛЕ сброса токена в BotFather замени значение ниже на новый.
+TELEGRAM_BOT_TOKEN=8708766321:AAHEK975FqlBqTusXmedyU9UctMWNKKYCRU
+WEBAPP_URL=https://1remix1.github.io/spy_bot
