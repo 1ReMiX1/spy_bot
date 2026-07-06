@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Реакция</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0e0f13; color: #f2f2f7;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 20px; user-select: none;
+  }
+  #pad {
+    width: 100%; max-width: 420px; min-height: 240px; border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 600; cursor: pointer;
+    background: #1c1d24; transition: background .05s; padding: 24px;
+  }
+  #pad.wait { background: #7a2020; }
+  #pad.go { background: #1f8a3b; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  #best { margin-top: 14px; opacity: .7; font-size: 15px; }
+  button.again {
+    margin-top: 18px; padding: 12px 20px; border: 0; border-radius: 12px;
+    background: #2f6fed; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <h1>⚡ Реакция</h1>
+  <div id="pad">Нажми, чтобы начать</div>
+  <div id="best"></div>
+  <button class="again" id="again" style="display:none">Ещё раз</button>
+
+<script>
+  var pad = document.getElementById('pad');
+  var best = document.getElementById('best');
+  var again = document.getElementById('again');
+  var state = 'idle'; // idle | waiting | ready | done
+  var startTime = 0, timer = null, record = null;
+
+  function reset(){
+    state = 'idle';
+    pad.className = '';
+    pad.textContent = 'Нажми, чтобы начать';
+    again.style.display = 'none';
+  }
+
+  function startWaiting(){
+    state = 'waiting';
+    pad.className = 'wait';
+    pad.textContent = 'Жди зелёного…';
+    var delay = 1000 + Math.random() * 3000;
+    timer = setTimeout(function(){
+      state = 'ready';
+      pad.className = 'go';
+      pad.textContent = 'Жми!';
+      startTime = Date.now();
+    }, delay);
+  }
+
+  function tap(){
+    if (state === 'idle' || state === 'done'){
+      startWaiting();
+    } else if (state === 'waiting'){
+      clearTimeout(timer);
+      state = 'done';
+      pad.className = '';
+      pad.textContent = 'Рано! Попробуй снова';
+      again.style.display = 'inline-block';
+    } else if (state === 'ready'){
+      var ms = Date.now() - startTime;
+      state = 'done';
+      pad.className = '';
+      pad.textContent = ms + ' мс';
+      if (record === null || ms < record){ record = ms; }
+      best.textContent = 'Лучший результат: ' + record + ' мс';
+      again.style.display = 'inline-block';
+    }
+  }
+
+  pad.addEventListener('click', tap);
+  again.addEventListener('click', function(e){ e.stopPropagation(); startWaiting(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "games": [
+    {
+      "id": "example-reaction",
+      "title": "Реакция",
+      "author": "Команда бота",
+      "icon": "⚡",
+      "description": "Успей нажать, когда экран станет зелёным",
+      "path": "games/example-reaction/index.html"
+    }
+  ]
+}
